@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, WSO2 LLC. (http://www.wso2.com).
+ * Copyright (c) 2025, WSO2 LLC. (https://www.wso2.com).
  *
  * WSO2 LLC. licenses this file to you under the Apache License,
  * Version 2.0 (the "License"); you may not use this file except
@@ -28,7 +28,7 @@ import (
 	flowmodel "github.com/asgardeo/thunder/internal/flow/model"
 	"github.com/asgardeo/thunder/internal/system/log"
 	usermodel "github.com/asgardeo/thunder/internal/user/model"
-	userprovider "github.com/asgardeo/thunder/internal/user/provider"
+	"github.com/asgardeo/thunder/internal/user/service"
 )
 
 const (
@@ -42,7 +42,8 @@ const (
 
 // AttributeCollector is an executor that collects user attributes and updates the user profile.
 type AttributeCollector struct {
-	internal flowmodel.Executor
+	internal    flowmodel.Executor
+	userService service.UserServiceInterface
 }
 
 var _ flowmodel.ExecutorInterface = (*AttributeCollector)(nil)
@@ -58,7 +59,8 @@ func NewAttributeCollector(id, name string, properties map[string]string) *Attri
 	}
 
 	return &AttributeCollector{
-		internal: *flowmodel.NewExecutor(id, name, []flowmodel.InputData{}, prerequisites, properties),
+		internal:    *flowmodel.NewExecutor(id, name, []flowmodel.InputData{}, prerequisites, properties),
+		userService: service.GetUserService(),
 	}
 }
 
@@ -326,10 +328,8 @@ func (a *AttributeCollector) updateUserInStore(ctx *flowmodel.NodeContext) error
 		return errors.New("failed to create updated user object")
 	}
 
-	userProvider := userprovider.NewUserProvider()
-	userService := userProvider.GetUserService()
-	if _, err := userService.UpdateUser(userID, updatedUser); err != nil {
-		return fmt.Errorf("failed to update user attributes: %w", err)
+	if _, svcErr := a.userService.UpdateUser(userID, updatedUser); svcErr != nil {
+		return fmt.Errorf("failed to update user attributes: %s", svcErr.Error)
 	}
 	logger.Debug("User attributes updated successfully", log.String("userID", userID))
 
@@ -346,11 +346,9 @@ func (a *AttributeCollector) getUserFromStore(ctx *flowmodel.NodeContext) (*user
 		return nil, errors.New("user ID is not available in the context")
 	}
 
-	userProvider := userprovider.NewUserProvider()
-	userService := userProvider.GetUserService()
-	user, err := userService.GetUser(userID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get user by ID: %w", err)
+	user, svcErr := a.userService.GetUser(userID)
+	if svcErr != nil {
+		return nil, fmt.Errorf("failed to get user by ID: %s", svcErr.Error)
 	}
 
 	return user, nil

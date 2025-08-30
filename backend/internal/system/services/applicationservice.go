@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, WSO2 LLC. (http://www.wso2.com).
+ * Copyright (c) 2025, WSO2 LLC. (https://www.wso2.com).
  *
  * WSO2 LLC. licenses this file to you under the Apache License,
  * Version 2.0 (the "License"); you may not use this file except
@@ -70,11 +70,11 @@ func (s *ApplicationService) RegisterRoutes(mux *http.ServeMux) {
 			AllowCredentials: true,
 		},
 	}
-	s.ServerOpsService.WrapHandleFunction(mux, "GET /applications/", &opts2,
+	s.ServerOpsService.WrapHandleFunction(mux, "GET /applications/{id}", &opts2,
 		s.applicationHandler.HandleApplicationGetRequest)
-	s.ServerOpsService.WrapHandleFunction(mux, "PUT /applications/", &opts2,
+	s.ServerOpsService.WrapHandleFunction(mux, "PUT /applications/{id}", &opts2,
 		s.applicationHandler.HandleApplicationPutRequest)
-	s.ServerOpsService.WrapHandleFunction(mux, "DELETE /applications/", &opts2,
+	s.ServerOpsService.WrapHandleFunction(mux, "DELETE /applications/{id}", &opts2,
 		s.applicationHandler.HandleApplicationDeleteRequest)
 	s.ServerOpsService.WrapHandleFunction(mux, "OPTIONS /applications/", &opts2,
 		func(w http.ResponseWriter, r *http.Request) {

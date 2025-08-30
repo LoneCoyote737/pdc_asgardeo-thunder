@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, WSO2 LLC. (http://www.wso2.com).
+ * Copyright (c) 2025, WSO2 LLC. (https://www.wso2.com).
  *
  * WSO2 LLC. licenses this file to you under the Apache License,
  * Version 2.0 (the "License"); you may not use this file except
@@ -28,13 +28,13 @@ import (
 	"path"
 	"time"
 
+	"github.com/asgardeo/thunder/internal/cert"
 	"github.com/asgardeo/thunder/internal/flow"
-	"github.com/asgardeo/thunder/internal/system/cert"
-	"github.com/asgardeo/thunder/internal/system/managers"
-
-	"github.com/asgardeo/thunder/internal/oauth/jwt"
+	"github.com/asgardeo/thunder/internal/system/cache"
 	"github.com/asgardeo/thunder/internal/system/config"
+	"github.com/asgardeo/thunder/internal/system/jwt"
 	"github.com/asgardeo/thunder/internal/system/log"
+	"github.com/asgardeo/thunder/internal/system/managers"
 )
 
 func main() {
@@ -93,14 +93,18 @@ func initThunderConfigurations(logger *log.Logger, thunderHome string) *config.C
 		logger.Fatal("Failed to load configurations", log.Error(err))
 	}
 
-	// Load the server's private key for signing JWTs.
-	if err := jwt.LoadPrivateKey(cfg, thunderHome); err != nil {
-		logger.Fatal("Failed to load private key", log.Error(err))
-	}
-
 	// Initialize runtime configurations.
 	if err := config.InitializeThunderRuntime(thunderHome, cfg); err != nil {
 		logger.Fatal("Failed to initialize thunder runtime", log.Error(err))
+	}
+
+	// Initialize the cache manager.
+	initCacheManager(logger)
+
+	// Load the server's private key for signing JWTs.
+	jwtService := jwt.GetJWTService()
+	if err := jwtService.Init(); err != nil {
+		logger.Fatal("Failed to load private key", log.Error(err))
 	}
 
 	return cfg
@@ -122,10 +126,19 @@ func initMultiplexer(logger *log.Logger) *http.ServeMux {
 
 // initFlowService initializes the flow service.
 func initFlowService(logger *log.Logger) {
-	svc := flow.GetFlowService()
+	svc := flow.GetFlowExecService()
 	if err := svc.Init(); err != nil {
 		logger.Fatal("Failed to initialize flow service", log.Error(err))
 	}
+}
+
+// initCacheManager initializes the cache manager with centralized cleanup.
+func initCacheManager(logger *log.Logger) {
+	cm := cache.GetCacheManager()
+	if cm == nil {
+		logger.Fatal("Failed to get cache manager instance")
+	}
+	cm.Init()
 }
 
 // startTLSServer starts the HTTPS server with TLS configuration.
@@ -133,7 +146,8 @@ func startTLSServer(logger *log.Logger, cfg *config.Config, mux *http.ServeMux, 
 	server, serverAddr := createHTTPServer(logger, cfg, mux)
 
 	// Get TLS configuration from the certificate and key files.
-	tlsConfig, err := cert.GetTLSConfig(cfg, thunderHome)
+	sysCertSvc := cert.NewSystemCertificateService()
+	tlsConfig, err := sysCertSvc.GetTLSConfig(cfg, thunderHome)
 	if err != nil {
 		logger.Fatal("Failed to load TLS configuration", log.Error(err))
 	}

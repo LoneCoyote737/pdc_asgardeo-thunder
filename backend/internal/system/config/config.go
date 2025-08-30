@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, WSO2 LLC. (http://www.wso2.com).
+ * Copyright (c) 2025, WSO2 LLC. (https://www.wso2.com).
  *
  * WSO2 LLC. licenses this file to you under the Apache License,
  * Version 2.0 (the "License"); you may not use this file except
@@ -69,6 +69,24 @@ type DatabaseConfig struct {
 	Runtime  DataSource `yaml:"runtime"`
 }
 
+// CacheProperty defines the properties for individual caches.
+type CacheProperty struct {
+	Name           string `yaml:"name"`
+	Disabled       bool   `yaml:"disabled"`
+	Size           int    `yaml:"size"`
+	TTL            int    `yaml:"ttl"`
+	EvictionPolicy string `yaml:"eviction_policy"`
+}
+
+// CacheConfig holds the cache configuration details.
+type CacheConfig struct {
+	Disabled        bool            `yaml:"disabled"`
+	Type            string          `yaml:"type"`
+	EvictionPolicy  string          `yaml:"eviction_policy"`
+	CleanupInterval int             `yaml:"cleanup_interval"`
+	Properties      []CacheProperty `yaml:"properties,omitempty"`
+}
+
 // JWTConfig holds the JWT configuration details.
 type JWTConfig struct {
 	Issuer         string `yaml:"issuer"`
@@ -87,25 +105,6 @@ type OAuthConfig struct {
 	RefreshToken RefreshTokenConfig `yaml:"refresh_token"`
 }
 
-// Authenticator holds the configuration details for an individual authenticator.
-type Authenticator struct {
-	Name             string            `yaml:"name"`
-	Type             string            `yaml:"type"`
-	DisplayName      string            `yaml:"display_name"`
-	Description      string            `yaml:"description"`
-	ClientID         string            `yaml:"client_id"`
-	ClientSecret     string            `yaml:"client_secret"`
-	RedirectURI      string            `yaml:"redirect_uri"`
-	Scopes           []string          `yaml:"scopes"`
-	AdditionalParams map[string]string `yaml:"additional_params"`
-}
-
-// AuthenticatorConfig holds the configuration details for the authenticators.
-type AuthenticatorConfig struct {
-	DefaultAuthenticator string          `yaml:"default"`
-	Authenticators       []Authenticator `yaml:"authenticators"`
-}
-
 // FlowAuthnConfig holds the configuration details for the authentication flows.
 type FlowAuthnConfig struct {
 	DefaultFlow string `yaml:"default_flow"`
@@ -117,15 +116,21 @@ type FlowConfig struct {
 	Authn          FlowAuthnConfig `yaml:"authn"`
 }
 
+// CryptoConfig holds the cryptographic configuration details.
+type CryptoConfig struct {
+	Key string `yaml:"key"`
+}
+
 // Config holds the complete configuration details of the server.
 type Config struct {
-	Server        ServerConfig        `yaml:"server"`
-	GateClient    GateClientConfig    `yaml:"gate_client"`
-	Security      SecurityConfig      `yaml:"security"`
-	Database      DatabaseConfig      `yaml:"database"`
-	OAuth         OAuthConfig         `yaml:"oauth"`
-	Authenticator AuthenticatorConfig `yaml:"authenticator"`
-	Flow          FlowConfig          `yaml:"flow"`
+	Server     ServerConfig     `yaml:"server"`
+	GateClient GateClientConfig `yaml:"gate_client"`
+	Security   SecurityConfig   `yaml:"security"`
+	Database   DatabaseConfig   `yaml:"database"`
+	Cache      CacheConfig      `yaml:"cache"`
+	OAuth      OAuthConfig      `yaml:"oauth"`
+	Flow       FlowConfig       `yaml:"flow"`
+	Crypto     CryptoConfig     `yaml:"crypto"`
 }
 
 // LoadConfig loads the configurations from the specified YAML file.

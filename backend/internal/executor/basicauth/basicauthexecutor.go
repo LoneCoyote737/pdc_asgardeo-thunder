@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, WSO2 LLC. (http://www.wso2.com).
+ * Copyright (c) 2025, WSO2 LLC. (https://www.wso2.com).
  *
  * WSO2 LLC. licenses this file to you under the Apache License,
  * Version 2.0 (the "License"); you may not use this file except
@@ -21,13 +21,14 @@ package basicauth
 
 import (
 	"encoding/json"
+	"fmt"
 
-	authnmodel "github.com/asgardeo/thunder/internal/authn/model"
+	authndto "github.com/asgardeo/thunder/internal/authn/dto"
 	"github.com/asgardeo/thunder/internal/executor/identify"
 	flowconst "github.com/asgardeo/thunder/internal/flow/constants"
 	flowmodel "github.com/asgardeo/thunder/internal/flow/model"
 	"github.com/asgardeo/thunder/internal/system/log"
-	userprovider "github.com/asgardeo/thunder/internal/user/provider"
+	"github.com/asgardeo/thunder/internal/user/service"
 )
 
 const (
@@ -43,7 +44,8 @@ const (
 // BasicAuthExecutor implements the ExecutorInterface for basic authentication.
 type BasicAuthExecutor struct {
 	*identify.IdentifyingExecutor
-	internal flowmodel.Executor
+	internal    flowmodel.Executor
+	userService service.UserServiceInterface
 }
 
 var _ flowmodel.ExecutorInterface = (*BasicAuthExecutor)(nil)
@@ -65,6 +67,7 @@ func NewBasicAuthExecutor(id, name string, properties map[string]string) *BasicA
 	return &BasicAuthExecutor{
 		IdentifyingExecutor: identify.NewIdentifyingExecutor(id, name, properties),
 		internal:            *flowmodel.NewExecutor(id, name, defaultInputs, []flowmodel.InputData{}, properties),
+		userService:         service.GetUserService(),
 	}
 }
 
@@ -170,7 +173,7 @@ func (b *BasicAuthExecutor) GetRequiredData(ctx *flowmodel.NodeContext) []flowmo
 // getAuthenticatedUser perform authentication based on the provided username and password and return
 // authenticated user details.
 func (b *BasicAuthExecutor) getAuthenticatedUser(ctx *flowmodel.NodeContext,
-	execResp *flowmodel.ExecutorResponse) (*authnmodel.AuthenticatedUser, error) {
+	execResp *flowmodel.ExecutorResponse) (*authndto.AuthenticatedUser, error) {
 	logger := log.GetLogger().With(log.String(log.LoggerKeyComponentName, loggerComponentName),
 		log.String(log.LoggerKeyExecutorID, b.GetID()))
 
@@ -188,7 +191,7 @@ func (b *BasicAuthExecutor) getAuthenticatedUser(ctx *flowmodel.NodeContext,
 				logger.Debug("User not found for the provided username. Proceeding with registration flow.")
 				execResp.Status = flowconst.ExecComplete
 
-				return &authnmodel.AuthenticatedUser{
+				return &authndto.AuthenticatedUser{
 					IsAuthenticated: false,
 					Attributes: map[string]string{
 						userAttributeUsername: username,
@@ -208,18 +211,22 @@ func (b *BasicAuthExecutor) getAuthenticatedUser(ctx *flowmodel.NodeContext,
 		return nil, nil
 	}
 
-	userProvider := userprovider.NewUserProvider()
-	userService := userProvider.GetUserService()
-
-	user, err := userService.VerifyUser(*userID, userAttributePassword, ctx.UserInputData[userAttributePassword])
-	if err != nil {
-		logger.Error("Failed to verify user credentials", log.String("userID", *userID), log.Error(err))
-		return nil, err
+	credentials := map[string]interface{}{
+		userAttributePassword: ctx.UserInputData[userAttributePassword],
 	}
 
-	var authenticatedUser authnmodel.AuthenticatedUser
+	user, svcErr := b.userService.VerifyUser(*userID, credentials)
+	if svcErr != nil {
+		logger.Error("Failed to verify user credentials",
+			log.String("userID", *userID),
+			log.String("error", svcErr.Error),
+			log.String("code", svcErr.Code))
+		return nil, fmt.Errorf("failed to verify user credentials: %s", svcErr.Error)
+	}
+
+	var authenticatedUser authndto.AuthenticatedUser
 	if user == nil {
-		authenticatedUser = authnmodel.AuthenticatedUser{
+		authenticatedUser = authndto.AuthenticatedUser{
 			IsAuthenticated: false,
 		}
 	} else {
@@ -247,7 +254,7 @@ func (b *BasicAuthExecutor) getAuthenticatedUser(ctx *flowmodel.NodeContext,
 			lastName = lastNameAttr.(string)
 		}
 
-		authenticatedUser = authnmodel.AuthenticatedUser{
+		authenticatedUser = authndto.AuthenticatedUser{
 			IsAuthenticated: true,
 			UserID:          user.ID,
 			Attributes:      map[string]string{},

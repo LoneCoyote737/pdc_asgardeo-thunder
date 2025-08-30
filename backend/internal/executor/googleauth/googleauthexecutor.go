@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, WSO2 LLC. (http://www.wso2.com).
+ * Copyright (c) 2025, WSO2 LLC. (https://www.wso2.com).
  *
  * WSO2 LLC. licenses this file to you under the Apache License,
  * Version 2.0 (the "License"); you may not use this file except
@@ -27,7 +27,7 @@ import (
 	"github.com/asgardeo/thunder/internal/executor/oidcauth"
 	flowconst "github.com/asgardeo/thunder/internal/flow/constants"
 	flowmodel "github.com/asgardeo/thunder/internal/flow/model"
-	jwtutils "github.com/asgardeo/thunder/internal/system/crypto/jwt/utils"
+	"github.com/asgardeo/thunder/internal/system/jwt"
 	"github.com/asgardeo/thunder/internal/system/log"
 )
 
@@ -164,7 +164,7 @@ func (g *GoogleOIDCAuthExecutor) ValidateIDToken(execResp *flowmodel.ExecutorRes
 	}
 
 	// Verify the id token signature.
-	signErr := jwtutils.VerifyJWTSignatureWithJWKS(idToken, g.GetJWKSEndpoint())
+	signErr := g.JWTService.VerifyJWTSignatureWithJWKS(idToken, g.GetJWKSEndpoint())
 	if signErr != nil {
 		execResp.Status = flowconst.ExecFailure
 		execResp.FailureReason = "ID token signature verification failed: " + signErr.Error()
@@ -172,7 +172,7 @@ func (g *GoogleOIDCAuthExecutor) ValidateIDToken(execResp *flowmodel.ExecutorRes
 	}
 
 	// Parse the JWT claims from the ID token.
-	claims, err := jwtutils.ParseJWTClaims(idToken)
+	claims, err := jwt.DecodeJWTPayload(idToken)
 	if err != nil {
 		execResp.Status = flowconst.ExecFailure
 		execResp.FailureReason = "Failed to parse ID token claims: " + err.Error()

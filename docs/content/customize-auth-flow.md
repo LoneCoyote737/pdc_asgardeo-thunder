@@ -218,18 +218,8 @@ To set an authentication flow for an application, create a new application or up
 ```bash
 curl -kL -X PUT -H 'Content-Type: application/json' -H 'Accept: application/json' https://localhost:8090/applications/<app_id> \
 --data '{
-    "id": "<app_id>",
     "name": "My Application",
     "description": "Application with custom auth flow",
-    "client_id": "<client_id>",
-    "client_secret": "***",
-    "callback_url": [
-        "https://localhost:3000"
-    ],
-    "supported_grant_types": [
-        "client_credentials",
-        "authorization_code"
-    ],
     "auth_flow_graph_id": "custom_auth_flow"
 }'
 ```

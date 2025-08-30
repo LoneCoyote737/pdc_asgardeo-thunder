@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, WSO2 LLC. (http://www.wso2.com).
+ * Copyright (c) 2025, WSO2 LLC. (https://www.wso2.com).
  *
  * WSO2 LLC. licenses this file to you under the Apache License,
  * Version 2.0 (the "License"); you may not use this file except
@@ -20,7 +20,7 @@
 package model
 
 import (
-	authnmodel "github.com/asgardeo/thunder/internal/authn/model"
+	authndto "github.com/asgardeo/thunder/internal/authn/dto"
 	"github.com/asgardeo/thunder/internal/flow/constants"
 )
 
@@ -38,7 +38,7 @@ type EngineContext struct {
 
 	Graph GraphInterface
 
-	AuthenticatedUser authnmodel.AuthenticatedUser
+	AuthenticatedUser authndto.AuthenticatedUser
 }
 
 // NodeContext holds the context for a specific node in the flow execution.
@@ -52,7 +52,7 @@ type NodeContext struct {
 	UserInputData map[string]string
 	RuntimeData   map[string]string
 
-	AuthenticatedUser authnmodel.AuthenticatedUser
+	AuthenticatedUser authndto.AuthenticatedUser
 }
 
 // FlowStep represents the outcome of a individual flow step

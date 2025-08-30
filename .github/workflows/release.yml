@@ -13,9 +13,10 @@ on:
         required: true
         type: string
 
-# Add permissions to allow pushing tags
+# Add permissions to allow pushing tags and packages
 permissions:
   contents: write
+  packages: write
 
 env:
   GOFLAGS: "-mod=readonly"
@@ -43,7 +44,7 @@ jobs:
           VERSION="${{ github.event.inputs.version }}"
           echo "VERSION=$VERSION" >> $GITHUB_ENV
 
-      - name: ✅ Set Sample Apps Version
+      - name: 🏷️ Set Sample Apps Version
         run: |
           # Get the product version input
           SAMPLE_VERSION="${{ github.event.inputs.version }}"
@@ -56,11 +57,19 @@ jobs:
           echo "✅ Sample version set to '$SAMPLE_VERSION'"
           echo "SAMPLE_VERSION=$SAMPLE_VERSION" >> $GITHUB_ENV
 
-      - name: 📝 Update Product Version
+      - name: 🏷️ Update Product Version
         run: |
           # Store version with v prefix in version.txt
           VERSION="${{ env.VERSION }}"
           echo "$VERSION" > version.txt
+
+      - name: 📝 Generate Changelog (Release Drafter)
+        id: changelog
+        uses: release-drafter/release-drafter@v5
+        with:
+          config-name: release-drafter.yml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: ⚙️ Set up Go Environment
         uses: ./.github/actions/setup-go
@@ -118,6 +127,13 @@ jobs:
           done
           
           echo "✅ Thunder built for all platforms successfully!"
+
+      - name: ⚙️ Set up Node.js Environment
+        uses: ./.github/actions/setup-node
+        with:
+          node-version: '20'
+          package-manager: 'npm'
+          dependency-path: 'samples/apps/oauth'
 
       - name: 📝 Update Sample Apps Version
         run: |
@@ -203,9 +219,15 @@ jobs:
           # Extract license section including header
           LICENSE=$(grep -A 5 "^## License" README.md)
           
+          # Add changelog from Release Drafter before features
+          CHANGELOG="${{ steps.changelog.outputs.body }}"
+
           # Combine for release description
           echo "RELEASE_BODY<<EOF" >> $GITHUB_ENV
           echo "$INTRO" >> $GITHUB_ENV
+          echo "" >> $GITHUB_ENV
+          echo "## ♻️ What's Changed" >> $GITHUB_ENV
+          echo "$CHANGELOG" >> $GITHUB_ENV
           echo "" >> $GITHUB_ENV
           echo "$FEATURES" >> $GITHUB_ENV
           echo "" >> $GITHUB_ENV
@@ -213,6 +235,42 @@ jobs:
           echo "" >> $GITHUB_ENV
           echo "$LICENSE" >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
+
+      - name: 🐳 Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: 🔐 Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 🐳 Build and Push Multi-Arch Docker Image
+        run: |
+          # Convert repository name to lowercase for GHCR
+          REPO_NAME=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          IMAGE_NAME="ghcr.io/${REPO_NAME}"
+          
+          # Get version without 'v' prefix for Docker tags
+          DOCKER_VERSION="${{ env.VERSION }}"
+          if [[ $DOCKER_VERSION == v* ]]; then
+            DOCKER_VERSION="${DOCKER_VERSION#v}"
+          fi
+          
+          echo "🐳 Building and pushing Docker image: ${IMAGE_NAME}:${DOCKER_VERSION}"
+          
+          # Build and push multi-arch image with version and latest tags
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            --tag "${IMAGE_NAME}:${DOCKER_VERSION}" \
+            --tag "${IMAGE_NAME}:latest" \
+            --push \
+            .
+          
+          echo "✅ Docker image pushed successfully!"
+          echo "📦 Image available at: ${IMAGE_NAME}:${DOCKER_VERSION}"
+          echo "📦 Image available at: ${IMAGE_NAME}:latest"
 
       - name: 📦 Create GitHub Release
         id: create_release
@@ -225,3 +283,19 @@ jobs:
           files: target/dist/*.zip
           body: ${{ env.RELEASE_BODY }}
           generate_release_notes: false
+      
+      - name: 🔔 Set Release Info
+        id: release_info
+        run: |
+          RELEASE_VERSION="${{ steps.version.outputs.version }}"
+          echo "release_name=Thunder ${RELEASE_VERSION}" >> $GITHUB_OUTPUT
+          echo "release_tag=${RELEASE_VERSION}" >> $GITHUB_OUTPUT
+          echo "release_url=https://github.com/${{ github.repository }}/releases/tag/${RELEASE_VERSION}" >> $GITHUB_OUTPUT
+      
+      - name: 🔔 Send Release Notification
+        uses: ./.github/actions/release-notification
+        with:
+          webhook: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
+          release-name: ${{ steps.release_info.outputs.release_name }}
+          release-tag: ${{ steps.release_info.outputs.release_tag }}
+          release-url: ${{ steps.release_info.outputs.release_url }}

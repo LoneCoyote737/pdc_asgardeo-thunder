@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, WSO2 LLC. (http://www.wso2.com).
+ * Copyright (c) 2025, WSO2 LLC. (https://www.wso2.com).
  *
  * WSO2 LLC. licenses this file to you under the Apache License,
  * Version 2.0 (the "License"); you may not use this file except
@@ -24,14 +24,14 @@ import (
 	"fmt"
 	"slices"
 
-	authnmodel "github.com/asgardeo/thunder/internal/authn/model"
+	authndto "github.com/asgardeo/thunder/internal/authn/dto"
 	"github.com/asgardeo/thunder/internal/executor/identify"
 	flowconst "github.com/asgardeo/thunder/internal/flow/constants"
 	flowmodel "github.com/asgardeo/thunder/internal/flow/model"
 	"github.com/asgardeo/thunder/internal/system/log"
 	sysutils "github.com/asgardeo/thunder/internal/system/utils"
 	usermodel "github.com/asgardeo/thunder/internal/user/model"
-	userprovider "github.com/asgardeo/thunder/internal/user/provider"
+	"github.com/asgardeo/thunder/internal/user/service"
 )
 
 const (
@@ -45,7 +45,8 @@ var nonUserAttributes = []string{"userID", "code", "nonce", "state", "flowID",
 // ProvisioningExecutor implements the ExecutorInterface for user provisioning in a flow.
 type ProvisioningExecutor struct {
 	*identify.IdentifyingExecutor
-	internal flowmodel.Executor
+	internal    flowmodel.Executor
+	userService service.UserServiceInterface
 }
 
 var _ flowmodel.ExecutorInterface = (*ProvisioningExecutor)(nil)
@@ -56,6 +57,7 @@ func NewProvisioningExecutor(id, name string, properties map[string]string) *Pro
 		IdentifyingExecutor: identify.NewIdentifyingExecutor(id, name, properties),
 		internal: *flowmodel.NewExecutor(id, name, []flowmodel.InputData{}, []flowmodel.InputData{},
 			properties),
+		userService: service.GetUserService(),
 	}
 }
 
@@ -151,7 +153,7 @@ func (p *ProvisioningExecutor) Execute(ctx *flowmodel.NodeContext) (*flowmodel.E
 		return nil, err
 	}
 
-	authenticatedUser := authnmodel.AuthenticatedUser{
+	authenticatedUser := authndto.AuthenticatedUser{
 		IsAuthenticated: true,
 		UserID:          createdUser.ID,
 		Attributes:      sysutils.ConvertInterfaceMapToStringMap(retAttributes),
@@ -318,11 +320,9 @@ func (p *ProvisioningExecutor) createUserInStore(flowID string,
 	}
 	user.Attributes = attributesJSON
 
-	userProvider := userprovider.NewUserProvider()
-	userService := userProvider.GetUserService()
-	retUser, err := userService.CreateUser(&user)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create user in the store: %w", err)
+	retUser, svcErr := p.userService.CreateUser(&user)
+	if svcErr != nil {
+		return nil, fmt.Errorf("failed to create user in the store: %s", svcErr.Error)
 	}
 	logger.Debug("User account created successfully", log.String("userID", retUser.ID))
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, WSO2 LLC. (http://www.wso2.com).
+ * Copyright (c) 2025, WSO2 LLC. (https://www.wso2.com).
  *
  * WSO2 LLC. licenses this file to you under the Apache License,
  * Version 2.0 (the "License"); you may not use this file except
@@ -22,10 +22,14 @@ package service
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/asgardeo/thunder/internal/group/constants"
 	"github.com/asgardeo/thunder/internal/group/model"
 	"github.com/asgardeo/thunder/internal/group/store"
+	ouconstants "github.com/asgardeo/thunder/internal/ou/constants"
+	ouservice "github.com/asgardeo/thunder/internal/ou/service"
+	serverconst "github.com/asgardeo/thunder/internal/system/constants"
 	"github.com/asgardeo/thunder/internal/system/error/serviceerror"
 	"github.com/asgardeo/thunder/internal/system/log"
 	"github.com/asgardeo/thunder/internal/system/utils"
@@ -37,10 +41,13 @@ const loggerComponentName = "GroupMgtService"
 // GroupServiceInterface defines the interface for the group service.
 type GroupServiceInterface interface {
 	GetGroupList(limit, offset int) (*model.GroupListResponse, *serviceerror.ServiceError)
+	GetGroupsByPath(handlePath string, limit, offset int) (*model.GroupListResponse, *serviceerror.ServiceError)
 	CreateGroup(request model.CreateGroupRequest) (*model.Group, *serviceerror.ServiceError)
+	CreateGroupByPath(handlePath string, request model.CreateGroupByPathRequest) (*model.Group, *serviceerror.ServiceError)
 	GetGroup(groupID string) (*model.Group, *serviceerror.ServiceError)
 	UpdateGroup(groupID string, request model.UpdateGroupRequest) (*model.Group, *serviceerror.ServiceError)
 	DeleteGroup(groupID string) *serviceerror.ServiceError
+	GetGroupMembers(groupID string, limit, offset int) (*model.MemberListResponse, *serviceerror.ServiceError)
 }
 
 // GroupService is the default implementation of the GroupServiceInterface.
@@ -82,7 +89,61 @@ func (gs *GroupService) GetGroupList(limit, offset int) (*model.GroupListRespons
 		Groups:       groupBasics,
 		StartIndex:   offset + 1,
 		Count:        len(groupBasics),
-		Links:        buildPaginationLinks(limit, offset, totalCount),
+		Links:        buildPaginationLinks("/groups", limit, offset, totalCount),
+	}
+
+	return response, nil
+}
+
+// GetGroupsByPath retrieves a list of groups by hierarchical handle path.
+func (gs *GroupService) GetGroupsByPath(
+	handlePath string, limit, offset int,
+) (*model.GroupListResponse, *serviceerror.ServiceError) {
+	logger := log.GetLogger().With(log.String(log.LoggerKeyComponentName, loggerComponentName))
+	logger.Debug("Getting groups by path", log.String("path", handlePath))
+
+	serviceError := gs.validateAndProcessHandlePath(handlePath)
+	if serviceError != nil {
+		return nil, serviceError
+	}
+
+	ouService := ouservice.GetOrganizationUnitService()
+	ou, svcErr := ouService.GetOrganizationUnitByPath(handlePath)
+	if svcErr != nil {
+		if svcErr.Code == ouconstants.ErrorOrganizationUnitNotFound.Code {
+			return nil, &constants.ErrorGroupNotFound
+		}
+		return nil, svcErr
+	}
+	organizationUnitID := ou.ID
+
+	if err := validatePaginationParams(limit, offset); err != nil {
+		return nil, err
+	}
+
+	totalCount, err := store.GetGroupsByOrganizationUnitCount(organizationUnitID)
+	if err != nil {
+		logger.Error("Failed to get group count by organization unit", log.Error(err))
+		return nil, &constants.ErrorInternalServerError
+	}
+
+	groups, err := store.GetGroupsByOrganizationUnit(organizationUnitID, limit, offset)
+	if err != nil {
+		logger.Error("Failed to list groups by organization unit", log.Error(err))
+		return nil, &constants.ErrorInternalServerError
+	}
+
+	groupBasics := make([]model.GroupBasic, 0, len(groups))
+	for _, groupDAO := range groups {
+		groupBasics = append(groupBasics, buildGroupBasic(groupDAO))
+	}
+
+	response := &model.GroupListResponse{
+		TotalResults: totalCount,
+		Groups:       groupBasics,
+		StartIndex:   offset + 1,
+		Count:        len(groupBasics),
+		Links:        buildPaginationLinks("/groups", limit, offset, totalCount),
 	}
 
 	return response, nil
@@ -93,25 +154,35 @@ func (gs *GroupService) CreateGroup(request model.CreateGroupRequest) (*model.Gr
 	logger := log.GetLogger().With(log.String(log.LoggerKeyComponentName, loggerComponentName))
 	logger.Debug("Creating group", log.String("name", request.Name))
 
-	// Validate request
 	if err := gs.validateCreateGroupRequest(request); err != nil {
 		return nil, err
 	}
 
-	ouID, err := gs.resolveOU(request.Parent)
-	if err != nil {
+	if err := gs.validateOU(request.OrganizationUnitID); err != nil {
 		return nil, err
 	}
 
-	logger.Debug("Resolved OU for new group", log.String("ouID", *ouID))
+	var userIDs []string
+	var groupIDs []string
+	for _, member := range request.Members {
+		switch member.Type {
+		case model.MemberTypeUser:
+			userIDs = append(userIDs, member.ID)
+		case model.MemberTypeGroup:
+			groupIDs = append(groupIDs, member.ID)
+		}
+	}
 
-	if err := gs.validateUserIDs(request.Users); err != nil {
+	if err := gs.validateUserIDs(userIDs); err != nil {
 		return nil, err
 	}
 
-	// Check if group with same name already exists under the same parent
-	if err := store.CheckGroupNameConflictForCreate(request.Name, request.Parent); err != nil {
-		if errors.Is(err, model.ErrGroupNameConflict) {
+	if err := gs.validateGroupIDs(groupIDs); err != nil {
+		return nil, err
+	}
+
+	if err := store.CheckGroupNameConflictForCreate(request.Name, request.OrganizationUnitID); err != nil {
+		if errors.Is(err, constants.ErrGroupNameConflict) {
 			logger.Debug("Group name conflict detected", log.String("name", request.Name))
 			return nil, &constants.ErrorGroupNameConflict
 		}
@@ -119,19 +190,12 @@ func (gs *GroupService) CreateGroup(request model.CreateGroupRequest) (*model.Gr
 		return nil, &constants.ErrorInternalServerError
 	}
 
-	var parentGroupID *string
-	if request.Parent.Type == model.ParentTypeGroup {
-		parentGroupID = &request.Parent.ID
-	}
-
 	groupDAO := model.GroupDAO{
-		ID:          utils.GenerateUUID(),
-		Name:        request.Name,
-		Description: request.Description,
-		Parent:      parentGroupID,
-		OU:          *ouID,
-		Users:       request.Users,
-		Groups:      []string{},
+		ID:                 utils.GenerateUUID(),
+		Name:               request.Name,
+		Description:        request.Description,
+		OrganizationUnitID: request.OrganizationUnitID,
+		Members:            request.Members,
 	}
 
 	if err := store.CreateGroup(groupDAO); err != nil {
@@ -142,6 +206,38 @@ func (gs *GroupService) CreateGroup(request model.CreateGroupRequest) (*model.Gr
 	group := convertGroupDAOToGroup(groupDAO)
 	logger.Debug("Successfully created group", log.String("id", groupDAO.ID), log.String("name", groupDAO.Name))
 	return &group, nil
+}
+
+// CreateGroupByPath creates a new group under the organization unit specified by the handle path.
+func (gs *GroupService) CreateGroupByPath(
+	handlePath string, request model.CreateGroupByPathRequest,
+) (*model.Group, *serviceerror.ServiceError) {
+	logger := log.GetLogger().With(log.String(log.LoggerKeyComponentName, loggerComponentName))
+	logger.Debug("Creating group by path", log.String("path", handlePath), log.String("name", request.Name))
+
+	serviceError := gs.validateAndProcessHandlePath(handlePath)
+	if serviceError != nil {
+		return nil, serviceError
+	}
+
+	ouService := ouservice.GetOrganizationUnitService()
+	ou, svcErr := ouService.GetOrganizationUnitByPath(handlePath)
+	if svcErr != nil {
+		if svcErr.Code == ouconstants.ErrorOrganizationUnitNotFound.Code {
+			return nil, &constants.ErrorGroupNotFound
+		}
+		return nil, svcErr
+	}
+
+	// Convert CreateGroupByPathRequest to CreateGroupRequest
+	createRequest := model.CreateGroupRequest{
+		Name:               request.Name,
+		Description:        request.Description,
+		OrganizationUnitID: ou.ID,
+		Members:            request.Members,
+	}
+
+	return gs.CreateGroup(createRequest)
 }
 
 // GetGroup retrieves a specific group by its id.
@@ -155,7 +251,7 @@ func (gs *GroupService) GetGroup(groupID string) (*model.Group, *serviceerror.Se
 
 	groupDAO, err := store.GetGroup(groupID)
 	if err != nil {
-		if errors.Is(err, model.ErrGroupNotFound) {
+		if errors.Is(err, constants.ErrGroupNotFound) {
 			logger.Debug("Group not found", log.String("id", groupID))
 			return nil, &constants.ErrorGroupNotFound
 		}
@@ -178,15 +274,13 @@ func (gs *GroupService) UpdateGroup(
 		return nil, &constants.ErrorMissingGroupID
 	}
 
-	// Validate request
 	if err := gs.validateUpdateGroupRequest(request); err != nil {
 		return nil, err
 	}
 
-	// Get existing group to ensure it exists
 	existingGroupDAO, err := store.GetGroup(groupID)
 	if err != nil {
-		if errors.Is(err, model.ErrGroupNotFound) {
+		if errors.Is(err, constants.ErrGroupNotFound) {
 			logger.Debug("Group not found", log.String("id", groupID))
 			return nil, &constants.ErrorGroupNotFound
 		}
@@ -195,26 +289,37 @@ func (gs *GroupService) UpdateGroup(
 	}
 
 	existingGroup := convertGroupDAOToGroup(existingGroupDAO)
-	updateOU := existingGroupDAO.OU
+	updateOrganizationUnitID := existingGroupDAO.OrganizationUnitID
 
-	if gs.isParentChanged(existingGroup, request) {
-		ouID, err := gs.resolveOU(request.Parent)
-		if err != nil {
+	if gs.isOrganizationUnitChanged(existingGroup, request) {
+		if err := gs.validateOU(request.OrganizationUnitID); err != nil {
 			return nil, err
 		}
-		logger.Debug("Resolved OU for group update", log.String("ouID", *ouID))
-		updateOU = *ouID
+		updateOrganizationUnitID = request.OrganizationUnitID
 	}
 
-	if err := gs.validateUserIDs(request.Users); err != nil {
+	var userIDs []string
+	var groupIDs []string
+	for _, member := range request.Members {
+		switch member.Type {
+		case model.MemberTypeUser:
+			userIDs = append(userIDs, member.ID)
+		case model.MemberTypeGroup:
+			groupIDs = append(groupIDs, member.ID)
+		}
+	}
+
+	if err := gs.validateUserIDs(userIDs); err != nil {
 		return nil, err
 	}
 
-	// Check for duplicate name under the same parent (only if name or parent changed)
-	if existingGroup.Name != request.Name || existingGroup.Parent.ID != request.Parent.ID ||
-		existingGroup.Parent.Type != request.Parent.Type {
-		if err := store.CheckGroupNameConflictForUpdate(request.Name, request.Parent, groupID); err != nil {
-			if errors.Is(err, model.ErrGroupNameConflict) {
+	if err := gs.validateGroupIDs(groupIDs); err != nil {
+		return nil, err
+	}
+
+	if existingGroup.Name != request.Name || existingGroup.OrganizationUnitID != request.OrganizationUnitID {
+		if err := store.CheckGroupNameConflictForUpdate(request.Name, request.OrganizationUnitID, groupID); err != nil {
+			if errors.Is(err, constants.ErrGroupNameConflict) {
 				logger.Debug("Group name conflict detected during update", log.String("name", request.Name))
 				return nil, &constants.ErrorGroupNameConflict
 			}
@@ -223,28 +328,15 @@ func (gs *GroupService) UpdateGroup(
 		}
 	}
 
-	var parentGroupID *string
-	if request.Parent.Type == model.ParentTypeGroup {
-		parentGroupID = &request.Parent.ID
-	}
-
-	// Create updated group object
 	updatedGroupDAO := model.GroupDAO{
-		ID:          existingGroup.ID,
-		Name:        request.Name,
-		Description: request.Description,
-		Parent:      parentGroupID,
-		OU:          updateOU,
-		Users:       request.Users,
-		Groups:      request.Groups,
+		ID:                 existingGroup.ID,
+		Name:               request.Name,
+		Description:        request.Description,
+		OrganizationUnitID: updateOrganizationUnitID,
+		Members:            request.Members,
 	}
 
-	// Update group in the database
 	if err := store.UpdateGroup(updatedGroupDAO); err != nil {
-		if errors.Is(err, model.ErrParentNotFound) {
-			logger.Debug("Parent not found during group update", log.String("parentID", request.Parent.ID))
-			return nil, &constants.ErrorParentNotFound
-		}
 		logger.Error("Failed to update group", log.Error(err))
 		return nil, &constants.ErrorInternalServerError
 	}
@@ -263,10 +355,9 @@ func (gs *GroupService) DeleteGroup(groupID string) *serviceerror.ServiceError {
 		return &constants.ErrorMissingGroupID
 	}
 
-	// Check if group exists
 	_, err := store.GetGroup(groupID)
 	if err != nil {
-		if errors.Is(err, model.ErrGroupNotFound) {
+		if errors.Is(err, constants.ErrGroupNotFound) {
 			logger.Debug("Group not found", log.String("id", groupID))
 			return &constants.ErrorGroupNotFound
 		}
@@ -274,12 +365,6 @@ func (gs *GroupService) DeleteGroup(groupID string) *serviceerror.ServiceError {
 		return &constants.ErrorInternalServerError
 	}
 
-	// Check if group can be deleted (no child groups)
-	if err := gs.validateForDeleteGroup(groupID); err != nil {
-		return err
-	}
-
-	// Delete the group
 	if err := store.DeleteGroup(groupID); err != nil {
 		logger.Error("Failed to delete group", log.String("id", groupID), log.Error(err))
 		return &constants.ErrorInternalServerError
@@ -289,19 +374,72 @@ func (gs *GroupService) DeleteGroup(groupID string) *serviceerror.ServiceError {
 	return nil
 }
 
+// GetGroupMembers retrieves members of a group with pagination.
+func (gs *GroupService) GetGroupMembers(groupID string, limit, offset int) (
+	*model.MemberListResponse, *serviceerror.ServiceError) {
+	logger := log.GetLogger().With(log.String(log.LoggerKeyComponentName, loggerComponentName))
+
+	if err := validatePaginationParams(limit, offset); err != nil {
+		return nil, err
+	}
+
+	if groupID == "" {
+		return nil, &constants.ErrorMissingGroupID
+	}
+
+	_, err := store.GetGroup(groupID)
+	if err != nil {
+		if errors.Is(err, constants.ErrGroupNotFound) {
+			logger.Debug("Group not found", log.String("id", groupID))
+			return nil, &constants.ErrorGroupNotFound
+		}
+		logger.Error("Failed to retrieve group", log.String("id", groupID), log.Error(err))
+		return nil, &constants.ErrorInternalServerError
+	}
+
+	totalCount, err := store.GetGroupMemberCount(groupID)
+	if err != nil {
+		logger.Error("Failed to get group member count", log.String("groupID", groupID), log.Error(err))
+		return nil, &constants.ErrorInternalServerError
+	}
+
+	members, err := store.GetGroupMembers(groupID, limit, offset)
+	if err != nil {
+		logger.Error("Failed to get group members", log.String("groupID", groupID), log.Error(err))
+		return nil, &constants.ErrorInternalServerError
+	}
+
+	baseURL := fmt.Sprintf("/groups/%s/members", groupID)
+	links := buildPaginationLinks(baseURL, limit, offset, totalCount)
+
+	response := &model.MemberListResponse{
+		TotalResults: totalCount,
+		Members:      members,
+		StartIndex:   offset + 1,
+		Count:        len(members),
+		Links:        links,
+	}
+
+	return response, nil
+}
+
 // validateCreateGroupRequest validates the create group request.
 func (gs *GroupService) validateCreateGroupRequest(request model.CreateGroupRequest) *serviceerror.ServiceError {
 	if request.Name == "" {
 		return &constants.ErrorInvalidRequestFormat
 	}
 
-	if request.Parent.Type == "" || request.Parent.ID == "" {
+	if request.OrganizationUnitID == "" {
 		return &constants.ErrorInvalidRequestFormat
 	}
 
-	// Use ParentType constants for validation
-	if request.Parent.Type != model.ParentTypeGroup && request.Parent.Type != model.ParentTypeOrganizationUnit {
-		return &constants.ErrorInvalidRequestFormat
+	for _, member := range request.Members {
+		if member.Type != model.MemberTypeUser && member.Type != model.MemberTypeGroup {
+			return &constants.ErrorInvalidRequestFormat
+		}
+		if member.ID == "" {
+			return &constants.ErrorInvalidRequestFormat
+		}
 	}
 
 	return nil
@@ -313,62 +451,40 @@ func (gs *GroupService) validateUpdateGroupRequest(request model.UpdateGroupRequ
 		return &constants.ErrorInvalidRequestFormat
 	}
 
-	if request.Parent.Type == "" || request.Parent.ID == "" {
+	if request.OrganizationUnitID == "" {
 		return &constants.ErrorInvalidRequestFormat
 	}
 
-	// Use ParentType constants for validation
-	if request.Parent.Type != model.ParentTypeGroup && request.Parent.Type != model.ParentTypeOrganizationUnit {
-		return &constants.ErrorInvalidRequestFormat
+	for _, member := range request.Members {
+		if member.Type != model.MemberTypeUser && member.Type != model.MemberTypeGroup {
+			return &constants.ErrorInvalidRequestFormat
+		}
+		if member.ID == "" {
+			return &constants.ErrorInvalidRequestFormat
+		}
 	}
 
 	return nil
 }
 
-// isParentChanged checks if the parent of the group has changed during an update.
-func (gs *GroupService) isParentChanged(existingGroup model.Group, request model.UpdateGroupRequest) bool {
-	return existingGroup.Parent.ID != request.Parent.ID || existingGroup.Parent.Type != request.Parent.Type
+// isOrganizationUnitChanged checks if the organization unit of the group has changed during an update.
+func (gs *GroupService) isOrganizationUnitChanged(existingGroup model.Group, request model.UpdateGroupRequest) bool {
+	return existingGroup.OrganizationUnitID != request.OrganizationUnitID
 }
 
-// resolveOU resolves the organization unit ID from the parent and validates its existence.
-func (gs *GroupService) resolveOU(parent model.Parent) (*string, *serviceerror.ServiceError) {
+// validateOU validates that provided organization unit ID exist.
+func (gs *GroupService) validateOU(ouID string) *serviceerror.ServiceError {
 	logger := log.GetLogger().With(log.String(log.LoggerKeyComponentName, loggerComponentName))
 
-	switch parent.Type {
-	case model.ParentTypeGroup:
-		parentGroup, err := store.GetGroup(parent.ID)
-		if err != nil {
-			if errors.Is(err, model.ErrGroupNotFound) {
-				logger.Debug("Parent group not found", log.String("parentID", parent.ID))
-				return nil, &constants.ErrorParentNotFound
-			}
-			logger.Error("Failed to check parent group existence", log.String("parentID", parent.ID), log.Error(err))
-			return nil, &constants.ErrorInternalServerError
-		}
-		return &parentGroup.OU, nil
-	case model.ParentTypeOrganizationUnit:
-		// TODO: Add validation for organization unit existence
-		logger.Debug("Organization unit validation not implemented", log.String("parentID", parent.ID))
-		return &parent.ID, nil
-	default:
-		return nil, &constants.ErrorInvalidRequestFormat
-	}
-}
-
-// validateForDeleteGroup checks if the group can be deleted.
-func (gs *GroupService) validateForDeleteGroup(groupID string) *serviceerror.ServiceError {
-	logger := log.GetLogger().With(log.String(log.LoggerKeyComponentName, loggerComponentName))
-
-	childGroups, err := store.GetChildGroups(groupID)
+	ouService := ouservice.GetOrganizationUnitService()
+	_, err := ouService.GetOrganizationUnit(ouID)
 	if err != nil {
-		logger.Error("Failed to check for child groups", log.String("groupID", groupID), log.Error(err))
-		return &constants.ErrorInternalServerError
-	}
-
-	if childGroups != nil && len(*childGroups) > 0 {
-		logger.Debug("Cannot delete group with child groups", log.String("groupID", groupID),
-			log.Int("childCount", len(*childGroups)))
-		return &constants.ErrorCannotDeleteGroup
+		if err.Code == ouconstants.ErrorOrganizationUnitNotFound.Code {
+			return &constants.ErrorInvalidOUID
+		} else {
+			logger.Error("Failed to get organization unit", log.Any("error: ", err))
+			return &constants.ErrorInternalServerError
+		}
 	}
 
 	return nil
@@ -379,15 +495,33 @@ func (gs *GroupService) validateUserIDs(userIDs []string) *serviceerror.ServiceE
 	logger := log.GetLogger().With(log.String(log.LoggerKeyComponentName, loggerComponentName))
 
 	userService := userservice.GetUserService()
-	invalidUserIDs, err := userService.ValidateUserIDs(userIDs)
-	if err != nil {
-		logger.Error("Failed to validate user IDs", log.Error(err))
+	invalidUserIDs, svcErr := userService.ValidateUserIDs(userIDs)
+	if svcErr != nil {
+		logger.Error("Failed to validate user IDs", log.String("error", svcErr.Error), log.String("code", svcErr.Code))
 		return &constants.ErrorInternalServerError
 	}
 
 	if len(invalidUserIDs) > 0 {
 		logger.Debug("Invalid user IDs found", log.Any("invalidUserIDs", invalidUserIDs))
-		return &constants.ErrorInvalidUserID
+		return &constants.ErrorInvalidUserMemberID
+	}
+
+	return nil
+}
+
+// validateGroupIDs validates that all provided group IDs exist.
+func (gs *GroupService) validateGroupIDs(groupIDs []string) *serviceerror.ServiceError {
+	logger := log.GetLogger().With(log.String(log.LoggerKeyComponentName, loggerComponentName))
+
+	invalidGroupIDs, err := store.ValidateGroupIDs(groupIDs)
+	if err != nil {
+		logger.Error("Failed to validate group IDs", log.Error(err))
+		return &constants.ErrorInternalServerError
+	}
+
+	if len(invalidGroupIDs) > 0 {
+		logger.Debug("Invalid group IDs found", log.Any("invalidGroupIDs", invalidGroupIDs))
+		return &constants.ErrorInvalidGroupMemberID
 	}
 
 	return nil
@@ -395,48 +529,17 @@ func (gs *GroupService) validateUserIDs(userIDs []string) *serviceerror.ServiceE
 
 // convertGroupDAOToGroup constructs a model.Group from a model.GroupDAO.
 func convertGroupDAOToGroup(groupDAO model.GroupDAO) model.Group {
-	parent := buildParent(groupDAO.Parent, groupDAO.OU)
-	group := model.Group{
-		ID:          groupDAO.ID,
-		Name:        groupDAO.Name,
-		Description: groupDAO.Description,
-		Parent:      parent,
-		Users:       groupDAO.Users,
-		Groups:      groupDAO.Groups,
-	}
-	return group
+	return model.Group(groupDAO)
 }
 
-// buildGroupBasic constructs a model.GroupBasic from a model.GroupDAO.
+// buildGroupBasic constructs a model.GroupBasic from a model.GroupBasicDAO.
 func buildGroupBasic(groupDAO model.GroupBasicDAO) model.GroupBasic {
-	parent := buildParent(groupDAO.Parent, groupDAO.OU)
-	return model.GroupBasic{
-		ID:          groupDAO.ID,
-		Name:        groupDAO.Name,
-		Description: groupDAO.Description,
-		Parent:      parent,
-	}
-}
-
-func buildParent(parentID *string, ouID string) model.Parent {
-	var parent model.Parent
-	if parentID == nil {
-		parent = model.Parent{
-			Type: model.ParentTypeOrganizationUnit,
-			ID:   ouID,
-		}
-	} else {
-		parent = model.Parent{
-			Type: model.ParentTypeGroup,
-			ID:   *parentID,
-		}
-	}
-	return parent
+	return model.GroupBasic(groupDAO)
 }
 
 // validatePaginationParams validates pagination parameters.
 func validatePaginationParams(limit, offset int) *serviceerror.ServiceError {
-	if limit < 1 || limit > 100 {
+	if limit < 1 || limit > serverconst.MaxPageSize {
 		return &constants.ErrorInvalidLimit
 	}
 	if offset < 0 {
@@ -446,12 +549,12 @@ func validatePaginationParams(limit, offset int) *serviceerror.ServiceError {
 }
 
 // buildPaginationLinks builds pagination links for the response.
-func buildPaginationLinks(limit, offset, totalCount int) []model.Link {
+func buildPaginationLinks(base string, limit, offset, totalCount int) []model.Link {
 	links := make([]model.Link, 0)
 
 	if offset > 0 {
 		links = append(links, model.Link{
-			Href: fmt.Sprintf("/groups?offset=0&limit=%d", limit),
+			Href: fmt.Sprintf("%s?offset=0&limit=%d", base, limit),
 			Rel:  "first",
 		})
 
@@ -460,7 +563,7 @@ func buildPaginationLinks(limit, offset, totalCount int) []model.Link {
 			prevOffset = 0
 		}
 		links = append(links, model.Link{
-			Href: fmt.Sprintf("/groups?offset=%d&limit=%d", prevOffset, limit),
+			Href: fmt.Sprintf("%s?offset=%d&limit=%d", base, prevOffset, limit),
 			Rel:  "prev",
 		})
 	}
@@ -468,7 +571,7 @@ func buildPaginationLinks(limit, offset, totalCount int) []model.Link {
 	if offset+limit < totalCount {
 		nextOffset := offset + limit
 		links = append(links, model.Link{
-			Href: fmt.Sprintf("/groups?offset=%d&limit=%d", nextOffset, limit),
+			Href: fmt.Sprintf("%s?offset=%d&limit=%d", base, nextOffset, limit),
 			Rel:  "next",
 		})
 	}
@@ -476,10 +579,29 @@ func buildPaginationLinks(limit, offset, totalCount int) []model.Link {
 	lastPageOffset := ((totalCount - 1) / limit) * limit
 	if offset < lastPageOffset {
 		links = append(links, model.Link{
-			Href: fmt.Sprintf("/groups?offset=%d&limit=%d", lastPageOffset, limit),
+			Href: fmt.Sprintf("%s?offset=%d&limit=%d", base, lastPageOffset, limit),
 			Rel:  "last",
 		})
 	}
 
 	return links
+}
+
+// validateAndProcessHandlePath validates and processes the handle path.
+func (gs *GroupService) validateAndProcessHandlePath(handlePath string) *serviceerror.ServiceError {
+	if strings.TrimSpace(handlePath) == "" {
+		return &constants.ErrorInvalidRequestFormat
+	}
+
+	handles := strings.Split(strings.Trim(handlePath, "/"), "/")
+	if len(handles) == 0 {
+		return &constants.ErrorInvalidRequestFormat
+	}
+
+	for _, handle := range handles {
+		if strings.TrimSpace(handle) == "" {
+			return &constants.ErrorInvalidRequestFormat
+		}
+	}
+	return nil
 }

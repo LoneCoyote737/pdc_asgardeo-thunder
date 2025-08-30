@@ -1,5 +1,5 @@
 # ------------------------------------------------------------------------------
-# Copyright (c) 2025, WSO2 LLC. (http://www.wso2.com).
+# Copyright (c) 2025, WSO2 LLC. (https://www.wso2.com).
 #
 # WSO2 LLC. licenses this file to you under the Apache License,
 # Version 2.0 (the "License"); you may not use this file except
@@ -35,6 +35,14 @@ packages:
       structname: '{{.InterfaceName}}Mock'
       pkgname: providermock
       filename: "{{.InterfaceName}}_mock.go"
+  
+  github.com/asgardeo/thunder/internal/system/database/model:
+    config:
+      all: true
+      dir: tests/mocks/database/modelmock
+      structname: '{{.InterfaceName}}Mock'
+      pkgname: modelmock
+      filename: "{{.InterfaceName}}_mock.go"
 
   github.com/asgardeo/thunder/internal/system/healthcheck/service:
     config:
@@ -50,4 +58,109 @@ packages:
       dir: tests/mocks/healthcheck/providermock
       structname: '{{.InterfaceName}}Mock'
       pkgname: providermock
+      filename: "{{.InterfaceName}}_mock.go"
+  
+  # Uncomment to generate mocks in the cache package.
+  # github.com/asgardeo/thunder/internal/system/cache:
+  #   config:
+  #     all: true
+  #     dir: internal/system/cache
+  #     structname: '{{.InterfaceName}}Mock'
+  #     pkgname: cache
+  #     filename: "{{.InterfaceName}}_mock_test.go"
+
+  github.com/asgardeo/thunder/internal/system/cache:
+    config:
+      all: true
+      dir: tests/mocks/cachemock
+      structname: '{{.InterfaceName}}Mock'
+      pkgname: cachemock
+      filename: "{{.InterfaceName}}_mock.go"
+
+  github.com/asgardeo/thunder/internal/cert:
+    config:
+      all: true
+      dir: tests/mocks/certmock
+      structname: '{{.InterfaceName}}Mock'
+      pkgname: certmock
+      filename: "{{.InterfaceName}}_mock.go"
+
+  github.com/asgardeo/thunder/internal/system/jwt:
+    config:
+      all: true
+      dir: tests/mocks/jwtmock
+      structname: '{{.InterfaceName}}Mock'
+      pkgname: jwtmock
+      filename: "{{.InterfaceName}}_mock.go"
+
+  github.com/asgardeo/thunder/internal/oauth/jwks:
+    config:
+      all: true
+      dir: tests/mocks/oauth/jwksmock
+      structname: '{{.InterfaceName}}Mock'
+      pkgname: jwksmock
+      filename: "{{.InterfaceName}}_mock.go"
+
+  github.com/asgardeo/thunder/internal/oauth/scope/provider:
+    config:
+      all: true
+      dir: tests/mocks/oauth/scope/providermock
+      structname: '{{.InterfaceName}}Mock'
+      pkgname: providermock
+      filename: "{{.InterfaceName}}_mock.go"
+
+  github.com/asgardeo/thunder/internal/oauth/scope/validator:
+    config:
+      all: true
+      dir: tests/mocks/oauth/scope/validatormock
+      structname: '{{.InterfaceName}}Mock'
+      pkgname: validatormock
+      filename: "{{.InterfaceName}}_mock.go"
+
+  github.com/asgardeo/thunder/internal/oauth/session/store:
+    config:
+      all: true
+      dir: tests/mocks/oauth/session/storemock
+      structname: '{{.InterfaceName}}Mock'
+      pkgname: storemock
+      filename: "{{.InterfaceName}}_mock.go"
+
+  github.com/asgardeo/thunder/internal/oauth/oauth2/authz:
+    config:
+      all: true
+      dir: tests/mocks/oauth/oauth2/authzmock
+      structname: '{{.InterfaceName}}Mock'
+      pkgname: authzmock
+      filename: "{{.InterfaceName}}_mock.go"
+
+  github.com/asgardeo/thunder/internal/oauth/oauth2/authz/store:
+    config:
+      all: true
+      dir: tests/mocks/oauth/oauth2/authz/storemock
+      structname: '{{.InterfaceName}}Mock'
+      pkgname: storemock
+      filename: "{{.InterfaceName}}_mock.go"
+
+  github.com/asgardeo/thunder/internal/oauth/oauth2/granthandlers:
+    config:
+      all: true
+      dir: tests/mocks/oauth/oauth2/granthandlersmock
+      structname: '{{.InterfaceName}}Mock'
+      pkgname: granthandlersmock
+      filename: "{{.InterfaceName}}_mock.go"
+
+  github.com/asgardeo/thunder/internal/oauth/oauth2/token:
+    config:
+      all: true
+      dir: tests/mocks/oauth/oauth2/tokenmock
+      structname: '{{.InterfaceName}}Mock'
+      pkgname: tokenmock
+      filename: "{{.InterfaceName}}_mock.go"
+
+  github.com/asgardeo/thunder/internal/oauth/oauth2/introspect:
+    config:
+      all: true
+      dir: tests/mocks/oauth/oauth2/introspectmock
+      structname: '{{.InterfaceName}}Mock'
+      pkgname: introspectmock
       filename: "{{.InterfaceName}}_mock.go"

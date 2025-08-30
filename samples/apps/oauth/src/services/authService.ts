@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, WSO2 LLC. (http://www.wso2.com).
+ * Copyright (c) 2025, WSO2 LLC. (https://www.wso2.com).
  *
  * WSO2 LLC. licenses this file to you under the Apache License,
  * Version 2.0 (the "License"); you may not use this file except
@@ -60,9 +60,10 @@ export const initiateNativeAuthFlow = async (flowType: 'LOGIN' | 'REGISTRATION' 
         "applicationId": applicationID
     };
 
-    // Only add flowType if it's REGISTRATION (LOGIN is the default)
     if (flowType === 'REGISTRATION') {
         data.flowType = 'REGISTRATION';
+    } else {
+        data.flowType = 'AUTHENTICATION';
     }
 
     try {
@@ -106,9 +107,10 @@ export const initiateNativeAuthFlowWithData = async (flowType: 'LOGIN' | 'REGIST
         data.actionId = actionId;
     }
 
-    // Only add flowType if it's REGISTRATION (LOGIN is the default)
     if (flowType === 'REGISTRATION') {
         data.flowType = 'REGISTRATION';
+    } else {
+        data.flowType = 'AUTHENTICATION';
     }
 
     // Include inputs if provided

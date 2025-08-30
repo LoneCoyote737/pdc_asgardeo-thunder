@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, WSO2 LLC. (http://www.wso2.com).
+ * Copyright (c) 2025, WSO2 LLC. (https://www.wso2.com).
  *
  * WSO2 LLC. licenses this file to you under the Apache License,
  * Version 2.0 (the "License"); you may not use this file except
@@ -62,6 +62,14 @@ var ErrorInvalidFlowType = serviceerror.ServiceError{
 	Type:             serviceerror.ClientErrorType,
 	Error:            "Invalid request",
 	ErrorDescription: "Invalid flow type provided in the request",
+}
+
+// ErrorRegistrationFlowDisabled defines the error response for registration flow disabled errors.
+var ErrorRegistrationFlowDisabled = serviceerror.ServiceError{
+	Code:             "FES-1006",
+	Type:             serviceerror.ClientErrorType,
+	Error:            "Registration not allowed",
+	ErrorDescription: "Registration flow is disabled for the application",
 }
 
 // Server error structs
@@ -211,4 +219,12 @@ var ErrorRegisFlowNotConfiguredForApplication = serviceerror.ServiceError{
 	Type:             serviceerror.ServerErrorType,
 	Error:            "Invalid configuration",
 	ErrorDescription: "No registration flow graph is configured for the application",
+}
+
+// ErrorFlowContextConversionFailed defines the error response for failed flow context conversion.
+var ErrorFlowContextConversionFailed = serviceerror.ServiceError{
+	Code:             "FES-5019",
+	Type:             serviceerror.ServerErrorType,
+	Error:            "Something went wrong",
+	ErrorDescription: "Failed to convert flow context from database format",
 }

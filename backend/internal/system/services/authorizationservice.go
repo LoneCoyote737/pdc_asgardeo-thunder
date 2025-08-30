@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, WSO2 LLC. (http://www.wso2.com).
+ * Copyright (c) 2025, WSO2 LLC. (https://www.wso2.com).
  *
  * WSO2 LLC. licenses this file to you under the Apache License,
  * Version 2.0 (the "License"); you may not use this file except
@@ -44,5 +44,21 @@ func NewAuthorizationService(mux *http.ServeMux) ServiceInterface {
 
 // RegisterRoutes registers the routes for the AuthorizationService.
 func (s *AuthorizationService) RegisterRoutes(mux *http.ServeMux) {
-	s.ServerOpsService.WrapHandleFunction(mux, "GET /oauth2/authorize", nil, s.authHandler.HandleAuthorizeRequest)
+	opts1 := server.RequestWrapOptions{
+		Cors: &server.Cors{
+			AllowedMethods:   "GET, POST",
+			AllowedHeaders:   "Content-Type, Authorization",
+			AllowCredentials: true,
+		},
+	}
+
+	s.ServerOpsService.WrapHandleFunction(mux, "GET /oauth2/authorize", &opts1,
+		s.authHandler.HandleAuthorizeGetRequest)
+	s.ServerOpsService.WrapHandleFunction(mux, "POST /oauth2/authorize", &opts1,
+		s.authHandler.HandleAuthorizePostRequest)
+
+	s.ServerOpsService.WrapHandleFunction(mux, "OPTIONS /oauth2/authorize", &opts1,
+		func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusNoContent)
+		})
 }

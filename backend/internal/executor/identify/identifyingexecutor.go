@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, WSO2 LLC. (http://www.wso2.com).
+ * Copyright (c) 2025, WSO2 LLC. (https://www.wso2.com).
  *
  * WSO2 LLC. licenses this file to you under the Apache License,
  * Version 2.0 (the "License"); you may not use this file except
@@ -21,12 +21,12 @@ package identify
 
 import (
 	"slices"
-	"strings"
 
 	flowconst "github.com/asgardeo/thunder/internal/flow/constants"
 	flowmodel "github.com/asgardeo/thunder/internal/flow/model"
 	"github.com/asgardeo/thunder/internal/system/log"
-	userprovider "github.com/asgardeo/thunder/internal/user/provider"
+	userconst "github.com/asgardeo/thunder/internal/user/constants"
+	"github.com/asgardeo/thunder/internal/user/service"
 )
 
 const loggerComponentName = "IdentifyingExecutor"
@@ -35,13 +35,15 @@ var nonSearchableAttributes = []string{"password", "code", "nonce", "otp"}
 
 // IdentifyingExecutor implements the ExecutorInterface for identifying users based on provided attributes.
 type IdentifyingExecutor struct {
-	internal flowmodel.Executor
+	internal    flowmodel.Executor
+	userService service.UserServiceInterface
 }
 
 // NewIdentifyingExecutor creates a new instance of IdentifyingExecutor.
 func NewIdentifyingExecutor(id, name string, properties map[string]string) *IdentifyingExecutor {
 	return &IdentifyingExecutor{
-		internal: *flowmodel.NewExecutor(id, name, []flowmodel.InputData{}, []flowmodel.InputData{}, properties),
+		internal:    *flowmodel.NewExecutor(id, name, []flowmodel.InputData{}, []flowmodel.InputData{}, properties),
+		userService: service.GetUserService(),
 	}
 }
 
@@ -59,20 +61,21 @@ func (i *IdentifyingExecutor) IdentifyUser(filters map[string]interface{},
 		}
 	}
 
-	userProvider := userprovider.NewUserProvider()
-	userService := userProvider.GetUserService()
-	userID, err := userService.IdentifyUser(searchableFilter)
-	if err != nil {
-		if strings.Contains(err.Error(), "user not found") {
+	userID, svcErr := i.userService.IdentifyUser(searchableFilter)
+	if svcErr != nil {
+		if svcErr.Code == userconst.ErrorUserNotFound.Code {
 			logger.Debug("User not found for the provided filters")
 			execResp.Status = flowconst.ExecFailure
 			execResp.FailureReason = "User not found"
 			return nil, nil
+		} else {
+			logger.Debug("Failed to identify user due to error: " + svcErr.Error)
+			execResp.Status = flowconst.ExecFailure
+			execResp.FailureReason = "Failed to identify user"
+			return nil, nil
 		}
-
-		logger.Error("Error identifying user", log.Error(err))
-		return nil, err
 	}
+
 	if userID == nil || *userID == "" {
 		logger.Debug("User not found for the provided filter")
 		execResp.Status = flowconst.ExecFailure

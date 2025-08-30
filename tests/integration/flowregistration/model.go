@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, WSO2 LLC. (http://www.wso2.com).
+ * Copyright (c) 2025, WSO2 LLC. (https://www.wso2.com).
  *
  * WSO2 LLC. licenses this file to you under the Apache License,
  * Version 2.0 (the "License"); you may not use this file except
@@ -52,6 +52,21 @@ type User struct {
 	OrganizationUnit string          `json:"organizationUnit"`
 	Type             string          `json:"type"`
 	Attributes       json.RawMessage `json:"attributes"`
+}
+
+// Link represents a pagination link
+type Link struct {
+	Rel  string `json:"rel"`
+	Href string `json:"href"`
+}
+
+// UserListResponse represents the paginated response for user listing
+type UserListResponse struct {
+	TotalResults int    `json:"totalResults"`
+	StartIndex   int    `json:"startIndex"`
+	Count        int    `json:"count"`
+	Users        []User `json:"users"`
+	Links        []Link `json:"links"`
 }
 
 type ErrorResponse struct {

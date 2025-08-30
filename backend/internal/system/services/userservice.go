@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, WSO2 LLC. (http://www.wso2.com).
+ * Copyright (c) 2025, WSO2 LLC. (https://www.wso2.com).
  *
  * WSO2 LLC. licenses this file to you under the Apache License,
  * Version 2.0 (the "License"); you may not use this file except
@@ -38,7 +38,7 @@ type UserService struct {
 func NewUserService(mux *http.ServeMux) ServiceInterface {
 	instance := &UserService{
 		ServerOpsService: server.NewServerOperationService(),
-		userHandler:      &handler.UserHandler{},
+		userHandler:      handler.NewUserHandler(),
 	}
 	instance.RegisterRoutes(mux)
 
@@ -72,6 +72,40 @@ func (s *UserService) RegisterRoutes(mux *http.ServeMux) {
 	s.ServerOpsService.WrapHandleFunction(mux, "PUT /users/", &opts2, s.userHandler.HandleUserPutRequest)
 	s.ServerOpsService.WrapHandleFunction(mux, "DELETE /users/", &opts2, s.userHandler.HandleUserDeleteRequest)
 	s.ServerOpsService.WrapHandleFunction(mux, "OPTIONS /users/", &opts2,
+		func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusNoContent)
+		})
+
+	opts3 := server.RequestWrapOptions{
+		Cors: &server.Cors{
+			AllowedMethods:   "GET, POST",
+			AllowedHeaders:   "Content-Type, Authorization",
+			AllowCredentials: true,
+		},
+	}
+	s.ServerOpsService.WrapHandleFunction(mux, "GET /users/tree/{path...}", &opts3,
+		s.userHandler.HandleUserListByPathRequest)
+	s.ServerOpsService.WrapHandleFunction(mux, "POST /users/tree/{path...}", &opts3,
+		s.userHandler.HandleUserPostByPathRequest)
+	s.ServerOpsService.WrapHandleFunction(
+		mux,
+		"OPTIONS /users/tree/{path...}",
+		&opts3,
+		func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusNoContent)
+		},
+	)
+
+	opts4 := server.RequestWrapOptions{
+		Cors: &server.Cors{
+			AllowedMethods:   "POST",
+			AllowedHeaders:   "Content-Type, Authorization",
+			AllowCredentials: true,
+		},
+	}
+	s.ServerOpsService.WrapHandleFunction(
+		mux, "POST /users/authenticate", &opts4, s.userHandler.HandleUserAuthenticateRequest)
+	s.ServerOpsService.WrapHandleFunction(mux, "OPTIONS /users/authenticate", &opts4,
 		func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNoContent)
 		})

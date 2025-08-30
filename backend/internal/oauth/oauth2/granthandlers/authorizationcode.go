@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, WSO2 LLC. (http://www.wso2.com).
+ * Copyright (c) 2025, WSO2 LLC. (https://www.wso2.com).
  *
  * WSO2 LLC. licenses this file to you under the Apache License,
  * Version 2.0 (the "License"); you may not use this file except
@@ -23,29 +23,38 @@ import (
 	"time"
 
 	appmodel "github.com/asgardeo/thunder/internal/application/model"
-	"github.com/asgardeo/thunder/internal/oauth/jwt"
-	"github.com/asgardeo/thunder/internal/oauth/oauth2/authz"
 	authzconstants "github.com/asgardeo/thunder/internal/oauth/oauth2/authz/constants"
 	authzmodel "github.com/asgardeo/thunder/internal/oauth/oauth2/authz/model"
+	"github.com/asgardeo/thunder/internal/oauth/oauth2/authz/store"
 	"github.com/asgardeo/thunder/internal/oauth/oauth2/constants"
 	"github.com/asgardeo/thunder/internal/oauth/oauth2/model"
+	"github.com/asgardeo/thunder/internal/system/jwt"
 )
 
-// AuthorizationCodeGrantHandler handles the authorization code grant type.
-type AuthorizationCodeGrantHandler struct{}
+// authorizationCodeGrantHandler handles the authorization code grant type.
+type authorizationCodeGrantHandler struct {
+	JWTService jwt.JWTServiceInterface
+	AuthZStore store.AuthorizationCodeStoreInterface
+}
 
-var _ GrantHandler = (*AuthorizationCodeGrantHandler)(nil)
+// newAuthorizationCodeGrantHandler creates a new instance of AuthorizationCodeGrantHandler.
+func newAuthorizationCodeGrantHandler() GrantHandlerInterface {
+	return &authorizationCodeGrantHandler{
+		JWTService: jwt.GetJWTService(),
+		AuthZStore: store.NewAuthorizationCodeStore(),
+	}
+}
 
 // ValidateGrant validates the authorization code grant request.
-func (h *AuthorizationCodeGrantHandler) ValidateGrant(tokenRequest *model.TokenRequest,
-	oauthApp *appmodel.OAuthApplication) *model.ErrorResponse {
+func (h *authorizationCodeGrantHandler) ValidateGrant(tokenRequest *model.TokenRequest,
+	oauthApp *appmodel.OAuthAppConfigProcessedDTO) *model.ErrorResponse {
 	if tokenRequest.GrantType == "" {
 		return &model.ErrorResponse{
 			Error:            constants.ErrorInvalidRequest,
 			ErrorDescription: "Missing grant type",
 		}
 	}
-	if tokenRequest.GrantType != constants.GrantTypeAuthorizationCode {
+	if constants.GrantType(tokenRequest.GrantType) != constants.GrantTypeAuthorizationCode {
 		return &model.ErrorResponse{
 			Error:            constants.ErrorUnsupportedGrantType,
 			ErrorDescription: "Unsupported grant type",
@@ -73,15 +82,6 @@ func (h *AuthorizationCodeGrantHandler) ValidateGrant(tokenRequest *model.TokenR
 		}
 	}
 
-	// Validate the client credentials.
-	// TODO: Authentication may not be required for public clients if not specified in the request.
-	if tokenRequest.ClientID != oauthApp.ClientID || tokenRequest.ClientSecret != oauthApp.ClientSecret {
-		return &model.ErrorResponse{
-			Error:            constants.ErrorInvalidClient,
-			ErrorDescription: "Invalid client credentials",
-		}
-	}
-
 	// Validate the authorization code.
 	if tokenRequest.Code == "" {
 		return &model.ErrorResponse{
@@ -94,9 +94,10 @@ func (h *AuthorizationCodeGrantHandler) ValidateGrant(tokenRequest *model.TokenR
 }
 
 // HandleGrant processes the authorization code grant request and generates a token response.
-func (h *AuthorizationCodeGrantHandler) HandleGrant(tokenRequest *model.TokenRequest,
-	oauthApp *appmodel.OAuthApplication, ctx *model.TokenContext) (*model.TokenResponseDTO, *model.ErrorResponse) {
-	authCode, err := authz.GetAuthorizationCode(tokenRequest.ClientID, tokenRequest.Code)
+func (h *authorizationCodeGrantHandler) HandleGrant(tokenRequest *model.TokenRequest,
+	oauthApp *appmodel.OAuthAppConfigProcessedDTO, ctx *model.TokenContext) (
+	*model.TokenResponseDTO, *model.ErrorResponse) {
+	authCode, err := h.AuthZStore.GetAuthorizationCode(tokenRequest.ClientID, tokenRequest.Code)
 	if err != nil || authCode.Code == "" {
 		return nil, &model.ErrorResponse{
 			Error:            constants.ErrorInvalidGrant,
@@ -111,7 +112,7 @@ func (h *AuthorizationCodeGrantHandler) HandleGrant(tokenRequest *model.TokenReq
 	}
 
 	// Invalidate the authorization code after use.
-	err = authz.DeactivateAuthorizationCode(authCode)
+	err = h.AuthZStore.DeactivateAuthorizationCode(authCode)
 	if err != nil {
 		return nil, &model.ErrorResponse{
 			Error:            constants.ErrorServerError,
@@ -119,9 +120,20 @@ func (h *AuthorizationCodeGrantHandler) HandleGrant(tokenRequest *model.TokenReq
 		}
 	}
 
+	// Get authorized scopes from the authorization code
+	authorizedScopesStr := strings.TrimSpace(authCode.Scopes)
+	authorizedScopes := []string{}
+	if authorizedScopesStr != "" {
+		authorizedScopes = strings.Split(authorizedScopesStr, " ")
+	}
+
 	// Generate a JWT token for the client
-	token, _, err := jwt.GenerateJWT(authCode.AuthorizedUserID, authCode.ClientID,
-		jwt.GetJWTTokenValidityPeriod(), nil)
+	jwtClaims := make(map[string]string)
+	if authorizedScopesStr != "" {
+		jwtClaims["scope"] = authorizedScopesStr
+	}
+	token, _, err := h.JWTService.GenerateJWT(authCode.AuthorizedUserID, authCode.ClientID,
+		jwt.GetJWTTokenValidityPeriod(), jwtClaims)
 	if err != nil {
 		return nil, &model.ErrorResponse{
 			Error:            constants.ErrorServerError,
@@ -137,13 +149,12 @@ func (h *AuthorizationCodeGrantHandler) HandleGrant(tokenRequest *model.TokenReq
 	ctx.TokenAttributes["aud"] = authCode.ClientID
 
 	// Prepare the token response.
-	scopes := strings.Split(tokenRequest.Scope, " ")
 	accessToken := &model.TokenDTO{
 		Token:     token,
 		TokenType: constants.TokenTypeBearer,
 		IssuedAt:  time.Now().Unix(),
 		ExpiresIn: 3600,
-		Scopes:    scopes,
+		Scopes:    authorizedScopes,
 		ClientID:  tokenRequest.ClientID,
 	}
 

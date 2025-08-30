@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, WSO2 LLC. (http://www.wso2.com).
+ * Copyright (c) 2025, WSO2 LLC. (https://www.wso2.com).
  *
  * WSO2 LLC. licenses this file to you under the Apache License,
  * Version 2.0 (the "License"); you may not use this file except
@@ -33,6 +33,7 @@ const testServerURL = "https://localhost:8095"
 func initiateAuthFlow(appID string, inputs map[string]string) (*FlowStep, error) {
 	flowReqBody := map[string]interface{}{
 		"applicationId": appID,
+		"flowType":      "AUTHENTICATION",
 	}
 	if len(inputs) > 0 {
 		flowReqBody["inputs"] = inputs
@@ -80,6 +81,7 @@ func initiateAuthFlow(appID string, inputs map[string]string) (*FlowStep, error)
 func initiateAuthFlowWithError(appID string, inputs map[string]string) (*ErrorResponse, error) {
 	flowReqBody := map[string]interface{}{
 		"applicationId": appID,
+		"flowType":      "AUTHENTICATION",
 	}
 	if len(inputs) > 0 {
 		flowReqBody["inputs"] = inputs

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, WSO2 LLC. (http://www.wso2.com).
+ * Copyright (c) 2025, WSO2 LLC. (https://www.wso2.com).
  *
  * WSO2 LLC. licenses this file to you under the Apache License,
  * Version 2.0 (the "License"); you may not use this file except
@@ -25,12 +25,38 @@ import (
 	"strings"
 )
 
-// ParseStringArray parses a comma-separated string into a slice of strings.
-func ParseStringArray(value interface{}) []string {
-	if value == nil {
-		return []string{}
+// ParseStringArray parses a string into a slice of strings using the specified separator.
+func ParseStringArray(value string, separator string) []string {
+	return ParseTypedStringArray[string](value, separator)
+}
+
+// ParseTypedStringArray parses a string into a slice of strings of type T using the specified separator.
+func ParseTypedStringArray[T ~string](value string, separator string) []T {
+	if value == "" {
+		return []T{}
 	}
-	return strings.Split(value.(string), ",")
+	if separator == "" {
+		separator = ","
+	}
+	parts := strings.Split(value, separator)
+	result := make([]T, len(parts))
+	for i, p := range parts {
+		result[i] = T(strings.TrimSpace(p))
+	}
+	return result
+}
+
+// StringifyStringArray converts a slice of strings into a single string,
+// joining the elements with the specified separator. If the slice is empty,
+// it returns an empty string. If the separator is empty, it defaults to a comma.
+func StringifyStringArray(values []string, separator string) string {
+	if len(values) == 0 {
+		return ""
+	}
+	if separator == "" {
+		separator = ","
+	}
+	return strings.Join(values, separator)
 }
 
 // ConvertInterfaceMapToStringMap converts a map with string keys and interface{} values
@@ -115,4 +141,13 @@ func BoolToNumString(b bool) string {
 // NumStringToBool converts a numeric string representation to a boolean value.
 func NumStringToBool(s string) bool {
 	return s == "1"
+}
+
+// ConvertToStringSlice converts a slice of custom string types to a slice of strings.
+func ConvertToStringSlice[T ~string](items []T) []string {
+	result := make([]string, len(items))
+	for i, item := range items {
+		result[i] = string(item)
+	}
+	return result
 }

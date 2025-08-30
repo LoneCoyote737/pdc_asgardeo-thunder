@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, WSO2 LLC. (http://www.wso2.com).
+ * Copyright (c) 2025, WSO2 LLC. (https://www.wso2.com).
  *
  * WSO2 LLC. licenses this file to you under the Apache License,
  * Version 2.0 (the "License"); you may not use this file except
@@ -88,7 +88,26 @@ func initTests() {
 }
 
 func runTests() error {
-	cmd := exec.Command("go", "test", "-p=1", "-v", "./...")
+	// Clean the test cache to avoid getting results from previous runs.
+	// This is important to avoid false positives in test results as the
+	// server and integration test suite are two separate applications.
+	cmd := exec.Command("go", "clean", "-testcache")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	err := cmd.Run()
+	if err != nil {
+		return fmt.Errorf("failed to clean test cache: %w", err)
+	}
+
+	_, err = exec.LookPath("gotestsum")
+	if err == nil {
+		fmt.Println("Running integration tests using gotestsum...")
+		cmd = exec.Command("gotestsum", "--format", "testname", "--", "-p=1", "./...")
+	} else {
+		fmt.Println("Running integration tests using go test...")
+		cmd = exec.Command("go", "test", "-p=1", "-v", "./...")
+	}
+
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, WSO2 LLC. (http://www.wso2.com).
+ * Copyright (c) 2025, WSO2 LLC. (https://www.wso2.com).
  *
  * WSO2 LLC. licenses this file to you under the Apache License,
  * Version 2.0 (the "License"); you may not use this file except
@@ -19,9 +19,22 @@
 // Package constants defines the constants used across the application module.
 package constants
 
+import "errors"
+
 const (
 	// AuthFlowGraphPrefix defines the prefix for authentication flow graph IDs.
 	AuthFlowGraphPrefix = "auth_flow_config_"
 	// RegistrationFlowGraphPrefix defines the prefix for registration flow graph IDs.
 	RegistrationFlowGraphPrefix = "registration_flow_config_"
 )
+
+// InboundAuthType represents the type of inbound authentication.
+type InboundAuthType string
+
+const (
+	// OAuthInboundAuthType represents the OAuth 2.0 inbound authentication type.
+	OAuthInboundAuthType InboundAuthType = "oauth2"
+)
+
+// ApplicationNotFoundError is the error returned when an application is not found.
+var ApplicationNotFoundError error = errors.New("application not found")

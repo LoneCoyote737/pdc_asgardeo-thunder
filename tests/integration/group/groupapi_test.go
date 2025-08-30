@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, WSO2 LLC. (http://www.wso2.com).
+ * Copyright (c) 2025, WSO2 LLC. (https://www.wso2.com).
  *
  * WSO2 LLC. licenses this file to you under the Apache License,
  * Version 2.0 (the "License"); you may not use this file except
@@ -38,12 +38,14 @@ var (
 	testOU = "456e8400-e29b-41d4-a716-446655440001"
 
 	groupToCreate = CreateGroupRequest{
-		Name: "Test Group",
-		Parent: Parent{
-			Type: ParentTypeOrganizationUnit,
-			Id:   testOU,
+		Name:               "Test Group",
+		OrganizationUnitId: testOU,
+		Members: []Member{
+			{
+				Id:   "550e8400-e29b-41d4-a716-446655440000",
+				Type: MemberTypeUser,
+			},
 		},
-		Users: []string{"550e8400-e29b-41d4-a716-446655440000"},
 	}
 )
 
@@ -109,8 +111,7 @@ func (suite *GroupAPITestSuite) TestGetGroup() {
 	createdGroup := buildCreatedGroup()
 	suite.Equal(createdGroup.Id, retrievedGroup.Id)
 	suite.Equal(createdGroup.Name, retrievedGroup.Name)
-	suite.Equal(createdGroup.Parent.Type, retrievedGroup.Parent.Type)
-	suite.Equal(createdGroup.Parent.Id, retrievedGroup.Parent.Id)
+	suite.Equal(createdGroup.OrganizationUnitId, retrievedGroup.OrganizationUnitId)
 }
 
 func (suite *GroupAPITestSuite) TestListGroups() {
@@ -157,6 +158,7 @@ func (suite *GroupAPITestSuite) TestListGroups() {
 		if group.Id == createdGroup.Id {
 			found = true
 			suite.Equal(createdGroup.Name, group.Name)
+			suite.Equal(createdGroup.OrganizationUnitId, group.OrganizationUnitId)
 			break
 		}
 	}
@@ -317,14 +319,10 @@ func (suite *GroupAPITestSuite) TestUpdateGroup() {
 	}
 
 	// Update the group
-	updateRequest := map[string]interface{}{
-		"name": "Updated Test Group",
-		"parent": map[string]string{
-			"type": string(ParentTypeOrganizationUnit),
-			"id":   testOU,
-		},
-		"users":  []string{},
-		"groups": []string{},
+	updateRequest := UpdateGroupRequest{
+		Name:               "Updated Test Group",
+		OrganizationUnitId: testOU,
+		Members:            []Member{}, // Empty members list
 	}
 
 	jsonData, err := json.Marshal(updateRequest)
@@ -361,12 +359,9 @@ func (suite *GroupAPITestSuite) TestUpdateGroup() {
 func (suite *GroupAPITestSuite) TestDeleteGroup() {
 	// Create a temporary group for this test since we don't want to delete the main test group
 	tempGroupToCreate := CreateGroupRequest{
-		Name: "Temp Test Group",
-		Parent: Parent{
-			Type: ParentTypeOrganizationUnit,
-			Id:   testOU,
-		},
-		Users: []string{},
+		Name:               "Temp Test Group",
+		OrganizationUnitId: testOU,
+		Members:            []Member{},
 	}
 
 	jsonData, err := json.Marshal(tempGroupToCreate)
@@ -439,10 +434,7 @@ func (suite *GroupAPITestSuite) TestGetNonExistentGroup() {
 func (suite *GroupAPITestSuite) TestCreateGroupWithInvalidData() {
 	// Try to create a group with invalid data (missing name)
 	invalidGroup := map[string]interface{}{
-		"parent": map[string]string{
-			"type": string(ParentTypeOrganizationUnit),
-			"id":   testOU,
-		},
+		"organizationUnitId": testOU,
 	}
 
 	jsonData, err := json.Marshal(invalidGroup)
@@ -470,12 +462,14 @@ func (suite *GroupAPITestSuite) TestCreateGroupWithInvalidData() {
 func (suite *GroupAPITestSuite) TestCreateGroupWithInvalidUserID() {
 	// Try to create a group with an invalid user ID
 	invalidGroup := CreateGroupRequest{
-		Name: "Group with Invalid User",
-		Parent: Parent{
-			Type: ParentTypeOrganizationUnit,
-			Id:   testOU,
+		Name:               "Group with Invalid User",
+		OrganizationUnitId: testOU,
+		Members: []Member{
+			{
+				Id:   "invalid-user-id-12345",
+				Type: MemberTypeUser,
+			},
 		},
-		Users: []string{"invalid-user-id-12345"},
 	}
 
 	jsonData, err := json.Marshal(invalidGroup)
@@ -506,22 +500,28 @@ func (suite *GroupAPITestSuite) TestCreateGroupWithInvalidUserID() {
 	suite.Require().NoError(err)
 
 	suite.Equal("GRP-1007", errorResp["code"])
-	suite.Equal("Invalid user ID", errorResp["message"])
-	suite.Contains(errorResp["description"], "One or more user IDs in the request do not exist")
+	suite.Equal("Invalid user member ID", errorResp["message"])
+	suite.Contains(errorResp["description"], "One or more user member IDs in the request do not exist")
 }
 
 func (suite *GroupAPITestSuite) TestCreateGroupWithMixedValidInvalidUserIDs() {
 	// Try to create a group with a mix of valid and invalid user IDs
 	invalidGroup := CreateGroupRequest{
-		Name: "Group with Mixed User IDs",
-		Parent: Parent{
-			Type: ParentTypeOrganizationUnit,
-			Id:   testOU,
-		},
-		Users: []string{
-			"550e8400-e29b-41d4-a716-446655440000", // This might be valid from setup
-			"invalid-user-id-12345",                // This is invalid
-			"another-invalid-user-67890",           // This is also invalid
+		Name:               "Group with Mixed User IDs",
+		OrganizationUnitId: testOU,
+		Members: []Member{
+			{
+				Id:   "550e8400-e29b-41d4-a716-446655440000", // This might be valid from setup
+				Type: MemberTypeUser,
+			},
+			{
+				Id:   "invalid-user-id-12345", // This is invalid
+				Type: MemberTypeUser,
+			},
+			{
+				Id:   "another-invalid-user-67890", // This is also invalid
+				Type: MemberTypeUser,
+			},
 		},
 	}
 
@@ -553,18 +553,15 @@ func (suite *GroupAPITestSuite) TestCreateGroupWithMixedValidInvalidUserIDs() {
 	suite.Require().NoError(err)
 
 	suite.Equal("GRP-1007", errorResp["code"])
-	suite.Equal("Invalid user ID", errorResp["message"])
+	suite.Equal("Invalid user member ID", errorResp["message"])
 }
 
 func (suite *GroupAPITestSuite) TestCreateGroupWithEmptyUserList() {
 	// Create a group with empty user list (should succeed)
 	validGroup := CreateGroupRequest{
-		Name: "Group with Empty Users",
-		Parent: Parent{
-			Type: ParentTypeOrganizationUnit,
-			Id:   testOU,
-		},
-		Users: []string{}, // Empty user list
+		Name:               "Group with Empty Users",
+		OrganizationUnitId: testOU,
+		Members:            []Member{}, // Empty members list
 	}
 
 	jsonData, err := json.Marshal(validGroup)
@@ -603,13 +600,14 @@ func (suite *GroupAPITestSuite) TestUpdateGroupWithInvalidUserID() {
 
 	// Try to update the group with an invalid user ID
 	updateRequest := UpdateGroupRequest{
-		Name: "Updated Group with Invalid User",
-		Parent: Parent{
-			Type: ParentTypeOrganizationUnit,
-			Id:   testOU,
+		Name:               "Updated Group with Invalid User",
+		OrganizationUnitId: testOU,
+		Members: []Member{
+			{
+				Id:   "invalid-user-id-update",
+				Type: MemberTypeUser,
+			},
 		},
-		Users:  []string{"invalid-user-id-update"},
-		Groups: []string{},
 	}
 
 	jsonData, err := json.Marshal(updateRequest)
@@ -640,8 +638,8 @@ func (suite *GroupAPITestSuite) TestUpdateGroupWithInvalidUserID() {
 	suite.Require().NoError(err)
 
 	suite.Equal("GRP-1007", errorResp["code"])
-	suite.Equal("Invalid user ID", errorResp["message"])
-	suite.Contains(errorResp["description"], "One or more user IDs in the request do not exist")
+	suite.Equal("Invalid user member ID", errorResp["message"])
+	suite.Contains(errorResp["description"], "One or more user member IDs in the request do not exist")
 }
 
 func (suite *GroupAPITestSuite) TestUpdateGroupWithValidEmptyUserList() {
@@ -651,13 +649,9 @@ func (suite *GroupAPITestSuite) TestUpdateGroupWithValidEmptyUserList() {
 
 	// Update the group with empty user list (should succeed)
 	updateRequest := UpdateGroupRequest{
-		Name: "Updated Group with Empty Users",
-		Parent: Parent{
-			Type: ParentTypeOrganizationUnit,
-			Id:   testOU,
-		},
-		Users:  []string{}, // Empty user list
-		Groups: []string{},
+		Name:               "Updated Group with Empty Users",
+		OrganizationUnitId: testOU,
+		Members:            []Member{}, // Empty members list
 	}
 
 	jsonData, err := json.Marshal(updateRequest)
@@ -686,7 +680,6 @@ func (suite *GroupAPITestSuite) TestUpdateGroupWithValidEmptyUserList() {
 
 	suite.Equal(createdGroupID, updatedGroup.Id)
 	suite.Equal("Updated Group with Empty Users", updatedGroup.Name)
-	suite.Equal(0, len(updatedGroup.Users))
 }
 
 func (suite *GroupAPITestSuite) TestUpdateGroupWithMultipleInvalidUserIDs() {
@@ -696,17 +689,22 @@ func (suite *GroupAPITestSuite) TestUpdateGroupWithMultipleInvalidUserIDs() {
 
 	// Try to update the group with multiple invalid user IDs
 	updateRequest := UpdateGroupRequest{
-		Name: "Updated Group with Multiple Invalid Users",
-		Parent: Parent{
-			Type: ParentTypeOrganizationUnit,
-			Id:   testOU,
+		Name:               "Updated Group with Multiple Invalid Users",
+		OrganizationUnitId: testOU,
+		Members: []Member{
+			{
+				Id:   "invalid-user-1",
+				Type: MemberTypeUser,
+			},
+			{
+				Id:   "invalid-user-2",
+				Type: MemberTypeUser,
+			},
+			{
+				Id:   "invalid-user-3",
+				Type: MemberTypeUser,
+			},
 		},
-		Users: []string{
-			"invalid-user-1",
-			"invalid-user-2",
-			"invalid-user-3",
-		},
-		Groups: []string{},
 	}
 
 	jsonData, err := json.Marshal(updateRequest)
@@ -737,7 +735,257 @@ func (suite *GroupAPITestSuite) TestUpdateGroupWithMultipleInvalidUserIDs() {
 	suite.Require().NoError(err)
 
 	suite.Equal("GRP-1007", errorResp["code"])
-	suite.Equal("Invalid user ID", errorResp["message"])
+	suite.Equal("Invalid user member ID", errorResp["message"])
+}
+
+func (suite *GroupAPITestSuite) TestCreateGroupWithMultipleMembers() {
+	// Create a temporary user for testing
+	testUserID, err := createTestUser()
+	if err != nil {
+		suite.T().Fatalf("Failed to create test user: %v", err)
+	}
+	defer func() {
+		if deleteErr := deleteTestUser(testUserID); deleteErr != nil {
+			suite.T().Logf("Failed to clean up test user: %v", deleteErr)
+		}
+	}()
+
+	// Create a group with multiple members (user + other members)
+	groupWithMembers := CreateGroupRequest{
+		Name:               "Group with Multiple Members",
+		OrganizationUnitId: testOU,
+		Members: []Member{
+			{
+				Id:   testUserID,
+				Type: MemberTypeUser,
+			},
+			{
+				Id:   "550e8400-e29b-41d4-a716-446655440000", // Another user ID
+				Type: MemberTypeUser,
+			},
+		},
+	}
+
+	jsonData, err := json.Marshal(groupWithMembers)
+	suite.Require().NoError(err)
+
+	client := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		},
+	}
+
+	req, err := http.NewRequest("POST", testServerURL+"/groups", bytes.NewBuffer(jsonData))
+	suite.Require().NoError(err)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
+	suite.Require().NoError(err)
+	defer resp.Body.Close()
+
+	suite.Equal(http.StatusCreated, resp.StatusCode)
+
+	var createdGroup Group
+	err = json.NewDecoder(resp.Body).Decode(&createdGroup)
+	suite.Require().NoError(err)
+
+	// Verify the created group has the correct members
+	suite.Equal(2, len(createdGroup.Members))
+
+	// Verify member types and IDs
+	memberIDs := make(map[string]MemberType)
+	for _, member := range createdGroup.Members {
+		memberIDs[member.Id] = member.Type
+	}
+
+	suite.Equal(MemberTypeUser, memberIDs[testUserID])
+	suite.Equal(MemberTypeUser, memberIDs["550e8400-e29b-41d4-a716-446655440000"])
+
+	// Clean up: delete the created group
+	deleteErr := deleteGroup(createdGroup.Id)
+	suite.Require().NoError(deleteErr)
+}
+
+func (suite *GroupAPITestSuite) TestUpdateGroupMembers() {
+	if createdGroupID == "" {
+		suite.T().Fatal("Group ID is not available for member update test")
+	}
+
+	// Create a temporary user for testing
+	testUserID, err := createTestUser()
+	if err != nil {
+		suite.T().Fatalf("Failed to create test user: %v", err)
+	}
+	defer func() {
+		if deleteErr := deleteTestUser(testUserID); deleteErr != nil {
+			suite.T().Logf("Failed to clean up test user: %v", deleteErr)
+		}
+	}()
+
+	// Update the group to add new members
+	updateRequest := UpdateGroupRequest{
+		Name:               "Updated Group with New Members",
+		OrganizationUnitId: testOU,
+		Members: []Member{
+			{
+				Id:   testUserID,
+				Type: MemberTypeUser,
+			},
+		},
+	}
+
+	jsonData, err := json.Marshal(updateRequest)
+	suite.Require().NoError(err)
+
+	client := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		},
+	}
+
+	req, err := http.NewRequest("PUT", testServerURL+"/groups/"+createdGroupID, bytes.NewBuffer(jsonData))
+	suite.Require().NoError(err)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
+	suite.Require().NoError(err)
+	defer resp.Body.Close()
+
+	suite.Equal(http.StatusOK, resp.StatusCode)
+
+	var updatedGroup Group
+	err = json.NewDecoder(resp.Body).Decode(&updatedGroup)
+	suite.Require().NoError(err)
+
+	// Verify the update
+	suite.Equal(createdGroupID, updatedGroup.Id)
+	suite.Equal("Updated Group with New Members", updatedGroup.Name)
+	suite.Equal(1, len(updatedGroup.Members))
+	suite.Equal(testUserID, updatedGroup.Members[0].Id)
+	suite.Equal(MemberTypeUser, updatedGroup.Members[0].Type)
+}
+
+func (suite *GroupAPITestSuite) TestCreateGroupWithGroupMember() {
+	// First create a temporary group that will be used as a member
+	tempGroup := CreateGroupRequest{
+		Name:               "Temp Member Group",
+		OrganizationUnitId: testOU,
+		Members:            []Member{},
+	}
+
+	jsonData, err := json.Marshal(tempGroup)
+	suite.Require().NoError(err)
+
+	client := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		},
+	}
+
+	// Create the member group
+	req, err := http.NewRequest("POST", testServerURL+"/groups", bytes.NewBuffer(jsonData))
+	suite.Require().NoError(err)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
+	suite.Require().NoError(err)
+	defer resp.Body.Close()
+
+	suite.Equal(http.StatusCreated, resp.StatusCode)
+
+	var memberGroup Group
+	err = json.NewDecoder(resp.Body).Decode(&memberGroup)
+	suite.Require().NoError(err)
+
+	// Clean up member group later
+	defer func() {
+		if deleteErr := deleteGroup(memberGroup.Id); deleteErr != nil {
+			suite.T().Logf("Failed to clean up member group: %v", deleteErr)
+		}
+	}()
+
+	// Now create a parent group that includes the first group as a member
+	parentGroup := CreateGroupRequest{
+		Name:               "Parent Group with Group Member",
+		OrganizationUnitId: testOU,
+		Members: []Member{
+			{
+				Id:   memberGroup.Id,
+				Type: MemberTypeGroup,
+			},
+		},
+	}
+
+	jsonData, err = json.Marshal(parentGroup)
+	suite.Require().NoError(err)
+
+	req, err = http.NewRequest("POST", testServerURL+"/groups", bytes.NewBuffer(jsonData))
+	suite.Require().NoError(err)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err = client.Do(req)
+	suite.Require().NoError(err)
+	defer resp.Body.Close()
+
+	suite.Equal(http.StatusCreated, resp.StatusCode)
+
+	var createdParentGroup Group
+	err = json.NewDecoder(resp.Body).Decode(&createdParentGroup)
+	suite.Require().NoError(err)
+
+	// Verify the parent group has the correct member
+	suite.Equal(1, len(createdParentGroup.Members))
+	suite.Equal(memberGroup.Id, createdParentGroup.Members[0].Id)
+	suite.Equal(MemberTypeGroup, createdParentGroup.Members[0].Type)
+
+	// Clean up: delete the parent group
+	deleteErr := deleteGroup(createdParentGroup.Id)
+	suite.Require().NoError(deleteErr)
+}
+
+func (suite *GroupAPITestSuite) TestCreateGroupWithInvalidGroupMember() {
+	// Try to create a group with an invalid group member ID
+	invalidGroup := CreateGroupRequest{
+		Name:               "Group with Invalid Group Member",
+		OrganizationUnitId: testOU,
+		Members: []Member{
+			{
+				Id:   "invalid-group-id-12345",
+				Type: MemberTypeGroup,
+			},
+		},
+	}
+
+	jsonData, err := json.Marshal(invalidGroup)
+	suite.Require().NoError(err)
+
+	client := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		},
+	}
+
+	req, err := http.NewRequest("POST", testServerURL+"/groups", bytes.NewBuffer(jsonData))
+	suite.Require().NoError(err)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
+	suite.Require().NoError(err)
+	defer resp.Body.Close()
+
+	suite.Equal(http.StatusBadRequest, resp.StatusCode)
+
+	// Verify the error response
+	body, err := io.ReadAll(resp.Body)
+	suite.Require().NoError(err)
+
+	var errorResp map[string]interface{}
+	err = json.Unmarshal(body, &errorResp)
+	suite.Require().NoError(err)
+
+	// The error code might be different for invalid group IDs
+	suite.Equal("GRP-1008", errorResp["code"])
+	suite.Equal("Invalid group member ID", errorResp["message"])
 }
 
 func createGroup(ts *GroupAPITestSuite) (string, error) {
@@ -885,17 +1133,112 @@ func deleteTestUser(userID string) error {
 func buildCreatedGroup() Group {
 	return Group{
 		GroupBasic: GroupBasic{
-			Id:   createdGroupID,
-			Name: groupToCreate.Name,
-			Parent: Parent{
-				Type: groupToCreate.Parent.Type,
-				Id:   groupToCreate.Parent.Id,
-			},
+			Id:                 createdGroupID,
+			Name:               groupToCreate.Name,
+			OrganizationUnitId: groupToCreate.OrganizationUnitId,
 		},
-		Users: groupToCreate.Users,
+		Members: groupToCreate.Members,
 	}
 }
 
 func TestGroupAPITestSuite(t *testing.T) {
 	suite.Run(t, new(GroupAPITestSuite))
+}
+
+func (suite *GroupAPITestSuite) TestGetGroupMembers() {
+	if createdGroupID == "" {
+		suite.T().Fatal("Group ID is not available for member retrieval")
+	}
+
+	// Get the group members
+	client := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		},
+	}
+
+	req, err := http.NewRequest("GET", testServerURL+"/groups/"+createdGroupID+"/members", nil)
+	suite.Require().NoError(err)
+
+	resp, err := client.Do(req)
+	suite.Require().NoError(err)
+	defer resp.Body.Close()
+
+	suite.Equal(http.StatusOK, resp.StatusCode)
+
+	body, err := io.ReadAll(resp.Body)
+	suite.Require().NoError(err)
+
+	var memberListResponse MemberListResponse
+	err = json.Unmarshal(body, &memberListResponse)
+	suite.Require().NoError(err)
+
+	// Verify the response structure
+	suite.GreaterOrEqual(memberListResponse.TotalResults, 1, "Should have at least one member")
+	suite.Equal(1, memberListResponse.StartIndex, "StartIndex should be 1 for non-paginated request")
+	suite.Equal(memberListResponse.TotalResults, memberListResponse.Count, "Count should equal TotalResults for non-paginated request")
+	suite.Equal(len(memberListResponse.Members), memberListResponse.Count, "Members array length should match Count")
+
+	// Verify we have the expected member
+	found := false
+	for _, member := range memberListResponse.Members {
+		if member.Id == "550e8400-e29b-41d4-a716-446655440000" && member.Type == MemberTypeUser {
+			found = true
+			break
+		}
+	}
+	suite.True(found, "Expected member should be in the list")
+}
+
+func (suite *GroupAPITestSuite) TestGetGroupMembersWithPagination() {
+	if createdGroupID == "" {
+		suite.T().Fatal("Group ID is not available for member retrieval")
+	}
+
+	// Test pagination with limit=1, offset=0
+	client := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		},
+	}
+
+	req, err := http.NewRequest("GET", testServerURL+"/groups/"+createdGroupID+"/members?limit=1&offset=0", nil)
+	suite.Require().NoError(err)
+
+	resp, err := client.Do(req)
+	suite.Require().NoError(err)
+	defer resp.Body.Close()
+
+	suite.Equal(http.StatusOK, resp.StatusCode)
+
+	body, err := io.ReadAll(resp.Body)
+	suite.Require().NoError(err)
+
+	var memberListResponse MemberListResponse
+	err = json.Unmarshal(body, &memberListResponse)
+	suite.Require().NoError(err)
+
+	// Verify pagination structure
+	suite.GreaterOrEqual(memberListResponse.TotalResults, 1, "Should have at least one member")
+	suite.Equal(1, memberListResponse.StartIndex, "StartIndex should be 1 for offset=0")
+	suite.LessOrEqual(memberListResponse.Count, 1, "Count should be at most 1 due to limit=1")
+	suite.LessOrEqual(len(memberListResponse.Members), 1, "Should return at most 1 member")
+}
+
+func (suite *GroupAPITestSuite) TestGetGroupMembersNotFound() {
+	// Try to get members of a non-existent group
+	client := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		},
+	}
+
+	req, err := http.NewRequest("GET", testServerURL+"/groups/non-existent-id/members", nil)
+	suite.Require().NoError(err)
+
+	resp, err := client.Do(req)
+	suite.Require().NoError(err)
+	defer resp.Body.Close()
+
+	suite.Equal(http.StatusNotFound, resp.StatusCode)
 }

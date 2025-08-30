@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, WSO2 LLC. (http://www.wso2.com).
+ * Copyright (c) 2025, WSO2 LLC. (https://www.wso2.com).
  *
  * WSO2 LLC. licenses this file to you under the Apache License,
  * Version 2.0 (the "License"); you may not use this file except
@@ -24,14 +24,14 @@ import (
 	"fmt"
 	"slices"
 
-	authnmodel "github.com/asgardeo/thunder/internal/authn/model"
+	authndto "github.com/asgardeo/thunder/internal/authn/dto"
 	"github.com/asgardeo/thunder/internal/executor/identify"
 	"github.com/asgardeo/thunder/internal/executor/oauth"
 	"github.com/asgardeo/thunder/internal/executor/oauth/model"
 	oauthmodel "github.com/asgardeo/thunder/internal/executor/oauth/model"
 	flowconst "github.com/asgardeo/thunder/internal/flow/constants"
 	flowmodel "github.com/asgardeo/thunder/internal/flow/model"
-	jwtutils "github.com/asgardeo/thunder/internal/system/crypto/jwt/utils"
+	"github.com/asgardeo/thunder/internal/system/jwt"
 	"github.com/asgardeo/thunder/internal/system/log"
 	systemutils "github.com/asgardeo/thunder/internal/system/utils"
 )
@@ -48,7 +48,8 @@ type OIDCAuthExecutorInterface interface {
 // OIDCAuthExecutor implements the OIDCAuthExecutorInterface for handling generic OIDC authentication flows.
 type OIDCAuthExecutor struct {
 	*identify.IdentifyingExecutor
-	internal oauth.OAuthExecutorInterface
+	internal   oauth.OAuthExecutorInterface
+	JWTService jwt.JWTServiceInterface
 }
 
 var _ flowmodel.ExecutorInterface = (*OIDCAuthExecutor)(nil)
@@ -78,6 +79,7 @@ func NewOIDCAuthExecutor(id, name string, defaultInputs []flowmodel.InputData, p
 	return &OIDCAuthExecutor{
 		IdentifyingExecutor: identify.NewIdentifyingExecutor(id, name, properties),
 		internal:            base,
+		JWTService:          jwt.GetJWTService(),
 	}
 }
 
@@ -246,7 +248,7 @@ func (o *OIDCAuthExecutor) ProcessAuthFlowResponse(ctx *flowmodel.NodeContext,
 		}
 		execResp.AuthenticatedUser = *authenticatedUser
 	} else {
-		execResp.AuthenticatedUser = authnmodel.AuthenticatedUser{
+		execResp.AuthenticatedUser = authndto.AuthenticatedUser{
 			IsAuthenticated: false,
 		}
 	}
@@ -311,7 +313,7 @@ func (o *OIDCAuthExecutor) ValidateIDToken(execResp *flowmodel.ExecutorResponse,
 
 	// Verify the id token signature.
 	if o.GetJWKSEndpoint() != "" {
-		signErr := jwtutils.VerifyJWTSignatureWithJWKS(idToken, o.GetJWKSEndpoint())
+		signErr := o.JWTService.VerifyJWTSignatureWithJWKS(idToken, o.GetJWKSEndpoint())
 		if signErr != nil {
 			execResp.Status = flowconst.ExecFailure
 			execResp.FailureReason = "ID token signature verification failed: " + signErr.Error()
@@ -327,7 +329,7 @@ func (o *OIDCAuthExecutor) GetIDTokenClaims(execResp *flowmodel.ExecutorResponse
 	logger := log.GetLogger().With(log.String(log.LoggerKeyComponentName, loggerComponentName))
 	logger.Debug("Extracting claims from the ID token")
 
-	claims, err := jwtutils.ParseJWTClaims(idToken)
+	claims, err := jwt.DecodeJWTPayload(idToken)
 	if err != nil {
 		execResp.Status = flowconst.ExecFailure
 		execResp.FailureReason = "Failed to parse ID token claims: " + err.Error()
@@ -355,7 +357,7 @@ func (o *OIDCAuthExecutor) validateTokenResponse(tokenResp *model.TokenResponse)
 // ID token and user info.
 func (o *OIDCAuthExecutor) getAuthenticatedUserWithAttributes(ctx *flowmodel.NodeContext,
 	execResp *flowmodel.ExecutorResponse, accessToken string, idTokenClaims map[string]interface{},
-	userID string) (*authnmodel.AuthenticatedUser, error) {
+	userID string) (*authndto.AuthenticatedUser, error) {
 	logger := log.GetLogger().With(log.String(log.LoggerKeyComponentName, loggerComponentName),
 		log.String(log.LoggerKeyExecutorID, o.GetID()),
 		log.String(log.LoggerKeyFlowID, ctx.FlowID))
@@ -408,7 +410,7 @@ func (o *OIDCAuthExecutor) getAuthenticatedUserWithAttributes(ctx *flowmodel.Nod
 		}
 	}
 
-	authenticatedUser := authnmodel.AuthenticatedUser{}
+	authenticatedUser := authndto.AuthenticatedUser{}
 	if ctx.FlowType == flowconst.FlowTypeRegistration {
 		authenticatedUser.IsAuthenticated = false
 	} else {

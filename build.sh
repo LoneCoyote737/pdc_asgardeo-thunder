@@ -1,6 +1,6 @@
 #!/bin/bash
 # ----------------------------------------------------------------------------
-# Copyright (c) 2025, WSO2 LLC. (http://www.wso2.com).
+# Copyright (c) 2025, WSO2 LLC. (https://www.wso2.com).
 #
 # WSO2 LLC. licenses this file to you under the Apache License,
 # Version 2.0 (the "License"); you may not use this file except
@@ -205,6 +205,50 @@ function initialize_databases() {
     echo "================================================================"
 }
 
+function seed_databases() {
+    echo "================================================================"
+    local override=$1
+    if [[ -z "$override" ]]; then
+        override=false
+    fi
+
+    echo "Seeding SQLite databases with initial data..."
+
+    db_files=("thunderdb.db")
+    seed_script_paths=("thunderdb/seed_data_sqlite.sql")
+
+    for ((i = 0; i < ${#db_files[@]}; i++)); do
+        db_file="${db_files[$i]}"
+        seed_script_rel_path="${seed_script_paths[$i]}"
+        db_path="$REPOSITORY_DB_DIR/$db_file"
+        seed_script_path="$SERVER_DB_SCRIPTS_DIR/$seed_script_rel_path"
+
+        if [[ -f "$seed_script_path" ]]; then
+            if [[ -f "$db_path" ]]; then
+                echo " - Seeding $db_file using $seed_script_path"
+                
+                if $override; then
+                    "$SERVER_SCRIPTS_DIR/seed_data.sh" -type sqlite -seed "$seed_script_path" -path "$db_path" -force
+                else
+                    "$SERVER_SCRIPTS_DIR/seed_data.sh" -type sqlite -seed "$seed_script_path" -path "$db_path"
+                fi
+                
+                if [[ $? -ne 0 ]]; then
+                    echo " ! Failed to seed $db_file"
+                    exit 1
+                fi
+            else
+                echo " ! Skipping $db_file seeding: Database file not found at $db_path"
+            fi
+        else
+            echo " ! Skipping $db_file seeding: Seed script not found at $seed_script_path"
+        fi
+    done
+
+    echo "SQLite database seeding complete."
+    echo "================================================================"
+}
+
 function prepare_backend_for_packaging() {
     echo "================================================================"
     echo "Copying backend artifacts..."
@@ -324,9 +368,18 @@ function package_sample_app() {
 
 function test_unit() {
     echo "================================================================"
-    echo "Running unit tests..."
+    echo "Preparing to run unit tests..."
     cd "$BACKEND_BASE_DIR" || exit 1
-    go test -v -cover ./... || { echo "There are unit test failures."; exit 1; }
+    
+    # Use gotestsum if available, otherwise fall back to go test
+    if command -v gotestsum &> /dev/null; then
+        echo "Running unit tests using gotestsum..."
+        gotestsum -- -v -cover ./... || { echo "There are unit test failures."; exit 1; }
+    else
+        echo "Running unit tests using go test..."
+        go test -v -cover ./... || { echo "There are unit test failures."; exit 1; }
+    fi
+    
     echo "================================================================"
 }
 
@@ -390,6 +443,9 @@ function run() {
 
     echo "Initializing databases..."
     initialize_databases
+    
+    echo "Seeding databases with initial data..."
+    seed_databases
 
     # Kill known ports
     function kill_port() {

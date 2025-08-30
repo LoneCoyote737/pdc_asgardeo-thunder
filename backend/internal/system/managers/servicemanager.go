@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, WSO2 LLC. (http://www.wso2.com).
+ * Copyright (c) 2025, WSO2 LLC. (https://www.wso2.com).
  *
  * WSO2 LLC. licenses this file to you under the Apache License,
  * Version 2.0 (the "License"); you may not use this file except
@@ -50,6 +50,15 @@ func (sm *ServiceManager) RegisterServices() error {
 	// Register the token service.
 	services.NewTokenService(sm.mux)
 
+	// Register the authorization service.
+	services.NewAuthorizationService(sm.mux)
+
+	// Register the JWKS service.
+	services.NewJWKSAPIService(sm.mux)
+
+	// Register the introspection service.
+	services.NewIntrospectionAPIService(sm.mux)
+
 	// Register the Organization Unit service.
 	services.NewOrganizationUnitService(sm.mux)
 
@@ -62,14 +71,8 @@ func (sm *ServiceManager) RegisterServices() error {
 	// Register the Application service.
 	services.NewApplicationService(sm.mux)
 
-	// Register the authorization service.
-	services.NewAuthorizationService(sm.mux)
-
 	// Register the identity provider service.
 	services.NewIDPService(sm.mux)
-
-	// Register the authentication service.
-	services.NewAuthenticationService(sm.mux)
 
 	// Register the flow execution service.
 	services.NewFlowExecutionService(sm.mux)

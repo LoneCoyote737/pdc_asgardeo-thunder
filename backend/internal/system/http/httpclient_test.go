@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, WSO2 LLC. (http://www.wso2.com).
+ * Copyright (c) 2025, WSO2 LLC. (https://www.wso2.com).
  *
  * WSO2 LLC. licenses this file to you under the Apache License,
  * Version 2.0 (the "License"); you may not use this file except
@@ -161,13 +161,19 @@ func (suite *HTTPClientTestSuite) TestGet() {
 }
 
 func (suite *HTTPClientTestSuite) TestDoWithError() {
+	// Create a test server and immediately close it to ensure the
+	// connection attempt fails without relying on external network
+	// conditions.
+	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	testServer.Close()
+
 	client := NewHTTPClient()
 
-	// Create a request to invalid URL
-	req, err := http.NewRequest("GET", "http://invalid-url-that-does-not-exist", nil)
+	// Create a request to the closed server
+	req, err := http.NewRequest("GET", testServer.URL, nil)
 	assert.NoError(suite.T(), err)
 
-	// Execute the request - should fail
+	// Execute the request - should fail because the server is closed
 	resp, err := client.Do(req)
 	assert.Error(suite.T(), err)
 	assert.Nil(suite.T(), resp)

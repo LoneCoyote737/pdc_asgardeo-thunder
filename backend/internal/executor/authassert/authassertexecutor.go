@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, WSO2 LLC. (http://www.wso2.com).
+ * Copyright (c) 2025, WSO2 LLC. (https://www.wso2.com).
  *
  * WSO2 LLC. licenses this file to you under the Apache License,
  * Version 2.0 (the "License"); you may not use this file except
@@ -24,7 +24,7 @@ import (
 
 	flowconst "github.com/asgardeo/thunder/internal/flow/constants"
 	flowmodel "github.com/asgardeo/thunder/internal/flow/model"
-	"github.com/asgardeo/thunder/internal/oauth/jwt"
+	"github.com/asgardeo/thunder/internal/system/jwt"
 	"github.com/asgardeo/thunder/internal/system/log"
 )
 
@@ -32,7 +32,8 @@ const loggerComponentName = "AuthAssertExecutor"
 
 // AuthAssertExecutor is an executor that handles authentication assertions in the flow.
 type AuthAssertExecutor struct {
-	internal flowmodel.Executor
+	internal   flowmodel.Executor
+	JWTService jwt.JWTServiceInterface
 }
 
 var _ flowmodel.ExecutorInterface = (*AuthAssertExecutor)(nil)
@@ -40,7 +41,8 @@ var _ flowmodel.ExecutorInterface = (*AuthAssertExecutor)(nil)
 // NewAuthAssertExecutor creates a new instance of AuthAssertExecutor.
 func NewAuthAssertExecutor(id, name string, properties map[string]string) *AuthAssertExecutor {
 	return &AuthAssertExecutor{
-		internal: *flowmodel.NewExecutor(id, name, []flowmodel.InputData{}, []flowmodel.InputData{}, properties),
+		internal:   *flowmodel.NewExecutor(id, name, []flowmodel.InputData{}, []flowmodel.InputData{}, properties),
+		JWTService: jwt.GetJWTService(),
 	}
 }
 
@@ -77,7 +79,7 @@ func (a *AuthAssertExecutor) Execute(ctx *flowmodel.NodeContext) (*flowmodel.Exe
 			tokenSub = ctx.AuthenticatedUser.UserID
 		}
 
-		token, _, err := jwt.GenerateJWT(tokenSub, ctx.AppID, jwt.GetJWTTokenValidityPeriod(),
+		token, _, err := a.JWTService.GenerateJWT(tokenSub, ctx.AppID, jwt.GetJWTTokenValidityPeriod(),
 			ctx.AuthenticatedUser.Attributes)
 		if err != nil {
 			logger.Error("Failed to generate JWT token", log.Error(err))

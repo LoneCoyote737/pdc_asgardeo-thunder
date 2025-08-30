@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, WSO2 LLC. (http://www.wso2.com).
+ * Copyright (c) 2025, WSO2 LLC. (https://www.wso2.com).
  *
  * WSO2 LLC. licenses this file to you under the Apache License,
  * Version 2.0 (the "License"); you may not use this file except
@@ -23,6 +23,7 @@ package services
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/asgardeo/thunder/internal/ou/handler"
 	"github.com/asgardeo/thunder/internal/system/server"
@@ -70,8 +71,29 @@ func (s *OrganizationUnitService) RegisterRoutes(mux *http.ServeMux) {
 			AllowCredentials: true,
 		},
 	}
-	s.serverOpsService.WrapHandleFunction(
-		mux, "GET /organization-units/{id}", &opts2, s.ouHandler.HandleOUGetRequest)
+	s.serverOpsService.WrapHandleFunction(mux, "GET /organization-units/", &opts2,
+		func(w http.ResponseWriter, r *http.Request) {
+			path := strings.TrimPrefix(r.URL.Path, "/organization-units/")
+			segments := strings.Split(path, "/")
+			r.SetPathValue("id", segments[0])
+
+			if len(segments) == 1 {
+				s.ouHandler.HandleOUGetRequest(w, r)
+			} else if len(segments) == 2 {
+				switch segments[1] {
+				case "ous":
+					s.ouHandler.HandleOUChildrenListRequest(w, r)
+				case "users":
+					s.ouHandler.HandleOUUsersListRequest(w, r)
+				case "groups":
+					s.ouHandler.HandleOUGroupsListRequest(w, r)
+				default:
+					http.NotFound(w, r)
+				}
+			} else {
+				http.NotFound(w, r)
+			}
+		})
 	s.serverOpsService.WrapHandleFunction(
 		mux, "PUT /organization-units/{id}", &opts2, s.ouHandler.HandleOUPutRequest)
 	s.serverOpsService.WrapHandleFunction(
@@ -84,4 +106,35 @@ func (s *OrganizationUnitService) RegisterRoutes(mux *http.ServeMux) {
 			w.WriteHeader(http.StatusNoContent)
 		},
 	)
+
+	s.serverOpsService.WrapHandleFunction(mux, "GET /organization-units/tree/{path...}", &opts2,
+		func(w http.ResponseWriter, r *http.Request) {
+			pathValue := r.PathValue("path")
+			handlers := map[string]func(http.ResponseWriter, *http.Request){
+				"/ous":    s.ouHandler.HandleOUChildrenListByPathRequest,
+				"/users":  s.ouHandler.HandleOUUsersListByPathRequest,
+				"/groups": s.ouHandler.HandleOUGroupsListByPathRequest,
+			}
+
+			for suffix, handlerFunc := range handlers {
+				if strings.HasSuffix(pathValue, suffix) {
+					newPath := strings.TrimSuffix(pathValue, suffix)
+					r.SetPathValue("path", newPath)
+					handlerFunc(w, r)
+					return
+				}
+			}
+
+			newPath := "/organization-units/tree/" + pathValue
+			r.URL.Path = newPath
+			s.ouHandler.HandleOUGetByPathRequest(w, r)
+		})
+	s.serverOpsService.WrapHandleFunction(
+		mux, "PUT /organization-units/tree/{path...}", &opts2, s.ouHandler.HandleOUPutByPathRequest)
+	s.serverOpsService.WrapHandleFunction(
+		mux, "DELETE /organization-units/tree/{path...}", &opts2, s.ouHandler.HandleOUDeleteByPathRequest)
+	s.serverOpsService.WrapHandleFunction(
+		mux, "OPTIONS /organization-units/tree/{path...}", &opts2, func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusNoContent)
+		})
 }

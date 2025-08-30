@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, WSO2 LLC. (http://www.wso2.com).
+ * Copyright (c) 2025, WSO2 LLC. (https://www.wso2.com).
  *
  * WSO2 LLC. licenses this file to you under the Apache License,
  * Version 2.0 (the "License"); you may not use this file except
@@ -19,79 +19,70 @@
 // Package model defines the data structures and interfaces for group management.
 package model
 
-import (
-	"errors"
-)
-
-// ParentType represents the type of parent entity.
-type ParentType string
+// MemberType represents the type of member entity.
+type MemberType string
 
 const (
-	// ParentTypeOrganizationUnit is the type for organization units.
-	ParentTypeOrganizationUnit ParentType = "organizationUnit"
-	// ParentTypeGroup is the type for groups.
-	ParentTypeGroup ParentType = "group"
+	// MemberTypeUser is the type for users.
+	MemberTypeUser MemberType = "user"
+	// MemberTypeGroup is the type for groups.
+	MemberTypeGroup MemberType = "group"
 )
 
-// Parent represents the parent of a group (either organization unit or another group).
-type Parent struct {
-	Type ParentType `json:"type"` // "organizationUnit" or "group"
+// Member represents a member of a group (either user or another group).
+type Member struct {
 	ID   string     `json:"id"`
+	Type MemberType `json:"type"`
 }
 
 // GroupBasic represents the basic information of a group.
 type GroupBasic struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Description string `json:"description,omitempty"`
-	Parent      Parent `json:"parent"`
+	ID                 string `json:"id"`
+	Name               string `json:"name"`
+	Description        string `json:"description,omitempty"`
+	OrganizationUnitID string `json:"organizationUnitId"`
 }
 
 // GroupBasicDAO represents a data access object for basic group information,
 type GroupBasicDAO struct {
-	ID          string
-	Name        string
-	Description string
-	Parent      *string
-	OU          string
+	ID                 string
+	Name               string
+	Description        string
+	OrganizationUnitID string
 }
 
-// Group represents a complete group with users and child groups.
+// Group represents a complete group with members.
 type Group struct {
-	ID          string   `json:"id"`
-	Name        string   `json:"name"`
-	Description string   `json:"description,omitempty"`
-	Parent      Parent   `json:"parent"`
-	Users       []string `json:"users,omitempty"`
-	Groups      []string `json:"groups"`
+	ID                 string   `json:"id"`
+	Name               string   `json:"name"`
+	Description        string   `json:"description,omitempty"`
+	OrganizationUnitID string   `json:"organizationUnitId"`
+	Members            []Member `json:"members,omitempty"`
 }
 
 // GroupDAO represents a data access object for a group, used for database operations.
 type GroupDAO struct {
-	ID          string
-	Name        string
-	Description string
-	Parent      *string
-	OU          string
-	Users       []string
-	Groups      []string
+	ID                 string
+	Name               string
+	Description        string
+	OrganizationUnitID string
+	Members            []Member
 }
 
 // CreateGroupRequest represents the request body for creating a group.
 type CreateGroupRequest struct {
-	Name        string   `json:"name"`
-	Description string   `json:"description,omitempty"`
-	Parent      Parent   `json:"parent"`
-	Users       []string `json:"users,omitempty"`
+	Name               string   `json:"name"`
+	Description        string   `json:"description,omitempty"`
+	OrganizationUnitID string   `json:"organizationUnitId"`
+	Members            []Member `json:"members,omitempty"`
 }
 
 // UpdateGroupRequest represents the request body for updating a group.
 type UpdateGroupRequest struct {
-	Name        string   `json:"name"`
-	Description string   `json:"description,omitempty"`
-	Parent      Parent   `json:"parent"`
-	Users       []string `json:"users,omitempty"`
-	Groups      []string `json:"groups,omitempty"`
+	Name               string   `json:"name"`
+	Description        string   `json:"description,omitempty"`
+	OrganizationUnitID string   `json:"organizationUnitId"`
+	Members            []Member `json:"members,omitempty"`
 }
 
 // Link represents a pagination link.
@@ -109,14 +100,18 @@ type GroupListResponse struct {
 	Links        []Link       `json:"links"`
 }
 
-// Error variables
-var (
-	// ErrGroupNotFound is returned when the group is not found in the system.
-	ErrGroupNotFound = errors.New("group not found")
+// MemberListResponse represents the response for listing group members with pagination.
+type MemberListResponse struct {
+	TotalResults int      `json:"totalResults"`
+	StartIndex   int      `json:"startIndex"`
+	Count        int      `json:"count"`
+	Members      []Member `json:"members"`
+	Links        []Link   `json:"links"`
+}
 
-	// ErrGroupNameConflict is returned when a group with the same name exists under the same parent.
-	ErrGroupNameConflict = errors.New("a group with the same name exists under the same parent")
-
-	// ErrParentNotFound is returned when the parent group or organization unit is not found.
-	ErrParentNotFound = errors.New("parent not found")
-)
+// CreateGroupByPathRequest represents the request body for creating a group under a specific OU path.
+type CreateGroupByPathRequest struct {
+	Name        string   `json:"name"`
+	Description string   `json:"description,omitempty"`
+	Members     []Member `json:"members,omitempty"`
+}
